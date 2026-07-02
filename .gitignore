@@ -1,0 +1,20 @@
+# OS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+
+# Sensitive exports (keep structured profiles in git; exclude bulk exports)
+*.csv
+*.xlsx
+imports/inbox/*
+!imports/inbox/.gitkeep
+exports/
+**/private/
+dashboard/.env
+dashboard/.venv/
+dashboard/__pycache__/
+dashboard/**/__pycache__/
+.streamlit/secrets.toml
+dashboard/.streamlit/secrets.toml
