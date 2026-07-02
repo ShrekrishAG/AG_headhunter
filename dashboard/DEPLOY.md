@@ -18,7 +18,7 @@ git push -u origin main
 3. **Repository:** `ShrekrishAG/AG_headhunter`
 4. **Branch:** `main`
 5. **Main file path:** `dashboard/app.py`
-6. **App URL slug:** e.g. `accord-recruiting` → **https://accord-recruiting.streamlit.app**
+6. **App URL slug:** `accord-headhunter` → **https://accord-headhunter.streamlit.app**
 
 Or open the prefilled deploy link:
 
@@ -65,11 +65,11 @@ Click **Deploy**. First build takes ~2–3 minutes.
 
 | Page | URL |
 |------|-----|
-| Pipeline (default) | `https://accord-recruiting.streamlit.app/` |
-| Dashboard | `https://accord-recruiting.streamlit.app/dashboard` |
-| Process | `https://accord-recruiting.streamlit.app/process` |
-| Communications | `https://accord-recruiting.streamlit.app/communications` |
-| R1 Scoring | `https://accord-recruiting.streamlit.app/r1-scoring` |
+| Pipeline (default) | `https://accord-headhunter.streamlit.app/` |
+| Dashboard | `https://accord-headhunter.streamlit.app/dashboard` |
+| Process | `https://accord-headhunter.streamlit.app/process` |
+| Communications | `https://accord-headhunter.streamlit.app/communications` |
+| R1 Scoring | `https://accord-headhunter.streamlit.app/r1-scoring` |
 
 Set `STREAMLIT_APP_URL` in `.env` and `slack-zr-agent/.env` to match.
 

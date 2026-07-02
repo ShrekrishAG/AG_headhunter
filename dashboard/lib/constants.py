@@ -25,7 +25,7 @@ OPEN_ROLES = [
 ]
 
 STREAMLIT_APP_URL = os.getenv(
-    "STREAMLIT_APP_URL", "https://accord-recruiting.streamlit.app"
+    "STREAMLIT_APP_URL", "https://accord-headhunter.streamlit.app"
 ).rstrip("/")
 
 PAGE_PATHS = {
