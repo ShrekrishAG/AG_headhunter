@@ -6,7 +6,7 @@ convention, then runs process-inbox + optional sync.
 
 Example:
   python dashboard/scripts/import-ziprecruiter-export.py \\
-    --export-dir ../slack-zr-agent/exports/2026-06-24_110147
+    --export-dir slack-zr-agent/exports/2026-06-24_110147
   python dashboard/scripts/import-ziprecruiter-export.py --latest
 """
 
@@ -24,7 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DASHBOARD = Path(__file__).resolve().parents[1]
 INBOX_ZR = ROOT / "imports" / "inbox" / "ZipRecruiter"
-DEFAULT_EXPORTS = ROOT.parent / "slack-zr-agent" / "exports"
+DEFAULT_EXPORTS = ROOT / "slack-zr-agent" / "exports"
 sys.path.insert(0, str(DASHBOARD))
 
 from lib.constants import RESUME_ROLE_PREFIX  # noqa: E402

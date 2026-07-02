@@ -45,25 +45,20 @@ Opens at http://localhost:8501
 
 ```bash
 python dashboard/scripts/post-export-pipeline.py \
-  --export-dir ../slack-zr-agent/exports/YYYY-MM-DD_HHMMSS
+  --export-dir slack-zr-agent/exports/YYYY-MM-DD_HHMMSS
 ```
 
 ## Project structure
 
 ```
-accord-headhunter/
-  roles/sales-representative/   # Brief, scorecard, sample walkthrough
-  company/context.md            # Accord employer context
-  candidates/                   # Scored candidate profiles
-  imports/inbox/ZipRecruiter/   # Resume inbox (gitignored — PII)
-  dashboard/
-    app.py                      # Streamlit app
-    views/                      # Pipeline, scoring, communications
-    scripts/
-      post-export-pipeline.py
-      sync-candidates.py
-      process-inbox.py
-  integrations/                 # Twilio, SendGrid, Calendly setup
+AG_headhunter/
+  dashboard/                  # Streamlit recruiting app
+  slack-zr-agent/             # ZipRecruiter Slack export bot
+  roles/sales-representative/
+  company/context.md
+  candidates/
+  imports/inbox/ZipRecruiter/
+  integrations/
   supabase/migrations/
 ```
 
@@ -82,12 +77,18 @@ See [roles/sales-representative/scorecard.md](roles/sales-representative/scoreca
 
 ## Integration with slack-zr-agent
 
-The ZipRecruiter Slack agent (`../slack-zr-agent`) exports CSV + PDFs, then triggers import → prescreen → reference drafts and posts a Slack link to this dashboard.
-
-Set in `slack-zr-agent/.env`:
+The ZipRecruiter Slack bot lives in **`slack-zr-agent/`** in this repo. It exports CSV + PDFs, runs the post-export pipeline, and posts a Slack link to the dashboard.
 
 ```bash
-ACCORD_HEADHUNTER_DIR=../accord-headhunter
+cd slack-zr-agent
+cp .env.example .env   # Slack tokens + ZipRecruiter settings
+python main.py
+```
+
+In `slack-zr-agent/.env`:
+
+```bash
+ACCORD_HEADHUNTER_DIR=..
 STREAMLIT_APP_URL=https://accord-recruiting.streamlit.app
 ```
 

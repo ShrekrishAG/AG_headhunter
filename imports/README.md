@@ -18,7 +18,7 @@ imports/inbox/
 3. Or run manually:
 
 ```bash
-python dashboard/scripts/post-export-pipeline.py --export-dir ../slack-zr-agent/exports/YYYY-MM-DD_HHMMSS
+python dashboard/scripts/post-export-pipeline.py --export-dir slack-zr-agent/exports/YYYY-MM-DD_HHMMSS
 ```
 
 The import script copies resume PDFs and preserves market/project from `candidates.csv`.

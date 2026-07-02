@@ -18,3 +18,11 @@ dashboard/__pycache__/
 dashboard/**/__pycache__/
 .streamlit/secrets.toml
 dashboard/.streamlit/secrets.toml
+
+# slack-zr-agent (ZipRecruiter Slack bot)
+slack-zr-agent/.env
+slack-zr-agent/.venv/
+slack-zr-agent/browser-data/
+slack-zr-agent/exports/
+slack-zr-agent/**/__pycache__/
+slack-zr-agent/**/*.pyc
