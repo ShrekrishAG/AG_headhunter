@@ -7,7 +7,7 @@ Public recruiting dashboard — share page links with your hiring team.
 Create a **new** private repo (e.g. `accord-headhunter`) — not linked to any other headhunter project.
 
 ```bash
-git remote add origin https://github.com/YOUR_ORG/accord-headhunter.git
+git remote add origin https://github.com/ShrekrishAG/AG_headhunter.git
 git push -u origin main
 ```
 
@@ -15,7 +15,7 @@ git push -u origin main
 
 1. Go to **[share.streamlit.io](https://share.streamlit.io)** and sign in with GitHub
 2. **Create app**
-3. **Repository:** `YOUR_ORG/accord-headhunter`
+3. **Repository:** `ShrekrishAG/AG_headhunter`
 4. **Branch:** `main`
 5. **Main file path:** `dashboard/app.py`
 6. **App URL slug:** e.g. `accord-recruiting` → **https://accord-recruiting.streamlit.app**
