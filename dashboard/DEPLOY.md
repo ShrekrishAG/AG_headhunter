@@ -20,7 +20,13 @@ git push -u origin main
 5. **Main file path:** `dashboard/app.py`
 6. **App URL slug:** e.g. `accord-recruiting` → **https://accord-recruiting.streamlit.app**
 
-Streamlit detects `dashboard/requirements.txt` automatically.
+Or open the prefilled deploy link:
+
+```bash
+./dashboard/scripts/open-streamlit-deploy.sh
+```
+
+Streamlit uses `dashboard/requirements.txt` and `dashboard/.streamlit/config.toml`.
 
 ## 3. Settings
 
