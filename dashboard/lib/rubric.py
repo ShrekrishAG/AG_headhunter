@@ -25,8 +25,7 @@ def recommendation_for_total(total: int) -> str:
 
 
 def qualifies_for_pipeline(total: int, recommendation: str | None = None) -> bool:
-    rec = recommendation or recommendation_for_total(total)
-    return total >= QUALIFIED_MIN_SCORE and rec in ("Strong interview", "Good candidate")
+    return total >= QUALIFIED_MIN_SCORE
 
 
 def recommendation_emoji(recommendation: str | None) -> str:

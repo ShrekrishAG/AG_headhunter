@@ -83,6 +83,7 @@ def redraft_r1_sms(
     fallback = build_r1_sms_body(
         candidate.get("full_name") or "Candidate",
         calendly_url,
+        market=candidate.get("market"),
     )
     prev_block = ""
     if previous_draft and previous_draft.strip():
@@ -144,10 +145,15 @@ def redraft_r1_email(
         raise RuntimeError("OPENAI_API_KEY not set — cannot redraft messages")
 
     fn = first_name(candidate.get("full_name") or "")
-    fallback_subject = build_r1_email_subject()
+    fallback_subject = build_r1_email_subject(
+        full_name=candidate.get("full_name") or "Candidate",
+        calendly_url=calendly_url,
+        market=candidate.get("market"),
+    )
     fallback_body = build_r1_email_body(
         candidate.get("full_name") or "Candidate",
         calendly_url,
+        market=candidate.get("market"),
     )
     prev_block = ""
     if previous_subject or previous_body:

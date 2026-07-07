@@ -32,6 +32,7 @@ Slack bot that asks for your permission before logging into ZipRecruiter and lis
 6. Under **Slash Commands** → create:
    - `/zr-projects` (or `/zr-project` — both work)
    - `/zr-export`
+   - `/zr-review`
 7. Under **Event Subscriptions** → enable and subscribe to bot events:
    - `app_mention`
    - `message.im`
@@ -146,6 +147,34 @@ export candidates: Accord Seattle=10, Accord NYC=5
 
 Slash command and DM text support the same limit syntax.
 
+### Review locked pipeline → unlock top N → export
+
+Score locked candidates using visible profile text (work experience), then confirm before spending unlock credits.
+
+**Form (recommended):** run `/zr-review` with no arguments, or click **Review locked pipeline** after listing projects. Set:
+
+- **Unlock top N per project** — e.g. `10` unlocks the top 10 from each project
+- **Review pool per project** — how many locked profiles to score first (default 25)
+- **Per-project overrides** — e.g. `TGC St Louis=10` on its own line
+
+**Text commands** still work:
+
+```
+/zr-review 5 in TGC St Louis
+review top 10 per project
+review 25 locked candidates in Accord NYC
+```
+
+Flow:
+
+1. Opens the project **Sourcing** tab (`/emp/rdb/project/{id}/sourcing`) and reviews up to `PIPELINE_REVIEW_POOL` locked profiles (default 25)
+2. AI-scores each against the Accord resume rubric (`OPENAI_API_KEY` from `.env` or `dashboard/.env`)
+3. Posts top N with scores in Slack
+4. **Yes, unlock N** → clicks Connect on ZipRecruiter (N credits)
+5. **Export & sync** → CSV + resumes + post-export pipeline (import, prescreen, reference drafts)
+
+Requires `ACCORD_HEADHUNTER_DIR` pointing at the monorepo root. Set `PIPELINE_REVIEW_POOL=25` in `.env` to change how many locked profiles are scored.
+
 Exports are saved locally under `exports/YYYY-MM-DD_HHMMSS/`:
 
 ```
@@ -197,6 +226,10 @@ slack-zr-agent/
     projects.py        # Project list scraper
     candidates.py      # Unlocked candidate scraper
     export.py          # CSV + resume download
+    locked_pipeline.py # Locked pipeline scrape + unlock
+    pipeline_prescreen.py
+    pipeline_review.py
+    review_options.py
     config.py
   browser-data/        # Saved login cookies (gitignored)
   exports/             # Exported CSV + resumes (gitignored)

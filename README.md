@@ -70,8 +70,8 @@ AG_headhunter/
 |------|-------|----------------|
 | Strong interview | 85+ | Advance |
 | Good candidate | 70–84 | Advance |
-| Phone screen | 55–69 | Consider |
-| Likely not a fit | &lt;55 | Pass |
+| Phone screen | 60–69 | Consider |
+| Likely not a fit | &lt;60 | Pass |
 
 See [roles/sales-representative/scorecard.md](roles/sales-representative/scorecard.md).
 

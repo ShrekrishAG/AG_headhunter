@@ -59,6 +59,46 @@ def project_pipeline_url(project_id: str) -> str:
     )
 
 
+def project_sourcing_url(project_id: str) -> str:
+    return urljoin(
+        ZIPRECRUITER_BASE_URL,
+        f"/emp/rdb/project/{project_id}/sourcing",
+    )
+
+
+async def open_sourcing_project(page: Page, project) -> None:
+    """Open the Sourcing tab where locked (not yet connected) candidates live."""
+    project_id = getattr(project, "project_id", "") or ""
+    project_name = getattr(project, "name", "") or "project"
+    if not project_id:
+        raise ZipRecruiterSessionError(f"Could not open sourcing tab for: {project_name}")
+
+    target = project_sourcing_url(project_id)
+    response = await page.goto(target, wait_until="networkidle", timeout=60000)
+    if not response or response.status >= 400:
+        raise ZipRecruiterSessionError(
+            f"Could not open sourcing tab for: {project_name} (HTTP {getattr(response, 'status', '?')})"
+        )
+
+    if "/sourcing" not in page.url:
+        for label in ("Sourcing",):
+            tab = page.get_by_role("tab", name=label).first
+            if await tab.count() > 0:
+                try:
+                    await tab.click(timeout=5000)
+                    await page.wait_for_timeout(2000)
+                    break
+                except Exception:
+                    pass
+
+    if "/sourcing" not in page.url and project_id not in page.url:
+        raise ZipRecruiterSessionError(
+            f"Could not open sourcing tab for: {project_name}. Landed on {page.url}"
+        )
+
+    await page.wait_for_timeout(1500)
+
+
 async def _browser_post_json(page: Page, url: str, payload: dict[str, Any]) -> dict[str, Any]:
     return await page.evaluate(
         BROWSER_FETCH_JSON,

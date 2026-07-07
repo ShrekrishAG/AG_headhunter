@@ -4,23 +4,32 @@ from __future__ import annotations
 
 from lib.app_config import get_config
 from lib.email_utils import normalize_email
-from lib.r1_invite import first_name, format_message_template, get_calendly_r1_url
+from lib.r1_invite import format_message_template, get_calendly_r1_url
 
-DEFAULT_R1_EMAIL_SUBJECT = "Accord Group — Project Sales Representative phone screen"
+DEFAULT_R1_EMAIL_SUBJECT = "ZipRecruiter match — sales role in {Market}"
 
-DEFAULT_R1_EMAIL_BODY = """Hi {first_name},
+DEFAULT_R1_EMAIL_BODY = """Hi {FirstName},
 
-Thank you for your interest in the Project Sales Representative role at Accord Group. We'd like to invite you to a 30-minute phone screen with our hiring team.
+I'm reaching out from Accord Group's recruiting team. We're hiring Project Sales Representatives in {Market}, and your resume on ZipRecruiter matched what we're looking for.
 
-Please pick a time that works for you:
-{calendly_url}
+Project Sales Reps help homeowners after storms — walking them through inspections, insurance claims, and restoration. You don't need roofing experience; Accord provides full training and ongoing support.
+
+A few things candidates like about this role:
+• Uncapped earning potential — your income follows your work ethic
+• Paid training and a clear path to grow
+• Licensed, insured employer (Inc. 5000 company)
+• Meaningful work helping families recover after storms
+
+Please book a phone screen with us if interested:
+{apply_url}
+
 
 Best,
+Brittaney
 Accord Group Recruiting
 
 ---
-Accord Group · Lee's Summit, MO
-Reply to this email to reach us. To stop recruiting messages, reply UNSUBSCRIBE."""
+Reply UNSUBSCRIBE to stop recruiting messages."""
 
 
 def build_r1_email_subject(
@@ -28,6 +37,7 @@ def build_r1_email_subject(
     *,
     full_name: str = "Candidate",
     calendly_url: str = "",
+    market: str | None = None,
 ) -> str:
     tpl = (template or DEFAULT_R1_EMAIL_SUBJECT).strip()
     if "{" not in tpl:
@@ -36,6 +46,7 @@ def build_r1_email_subject(
         tpl,
         full_name=full_name,
         calendly_url=calendly_url or get_calendly_r1_url(),
+        market=market,
     )
 
 
@@ -43,9 +54,16 @@ def build_r1_email_body(
     full_name: str,
     calendly_url: str,
     template: str | None = None,
+    *,
+    market: str | None = None,
 ) -> str:
     tpl = (template or DEFAULT_R1_EMAIL_BODY).strip()
-    return format_message_template(tpl, full_name=full_name, calendly_url=calendly_url)
+    return format_message_template(
+        tpl,
+        full_name=full_name,
+        calendly_url=calendly_url,
+        market=market,
+    )
 
 
 def sendgrid_configured() -> bool:

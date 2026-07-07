@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from lib.app_config import get_config
 from lib.r1_email_invite import sendgrid_configured
-from lib.r1_invite import get_calendly_r1_url, twilio_configured
+from lib.r1_invite import get_calendly_r1_url, sms_provider_configured, twilio_configured
+from lib.heymarket_client import heymarket_configured
 
 
 def outbound_sends_enabled() -> bool:
@@ -17,7 +18,7 @@ def calendly_configured() -> bool:
 
 
 def sms_ready() -> bool:
-    return outbound_sends_enabled() and calendly_configured() and twilio_configured()
+    return outbound_sends_enabled() and calendly_configured() and sms_provider_configured()
 
 
 def email_ready() -> bool:
@@ -35,10 +36,14 @@ def integration_rows() -> list[dict]:
             "required_for": "SMS + email booking links",
         },
         {
-            "name": "Twilio SMS",
-            "key": "TWILIO_*",
-            "configured": twilio_configured(),
-            "detail": _mask(get_config("TWILIO_FROM_NUMBER")) or "Missing SID / token / from number",
+            "name": "Heymarket SMS" if heymarket_configured() else "Twilio SMS",
+            "key": "HEYMARKET_*" if heymarket_configured() else "TWILIO_*",
+            "configured": heymarket_configured() or twilio_configured(),
+            "detail": (
+                f"Inbox {get_config('HEYMARKET_INBOX_ID')}"
+                if heymarket_configured()
+                else (_mask(get_config("TWILIO_FROM_NUMBER")) or "Missing SID / token / from number")
+            ),
             "required_for": "Send SMS from Pipeline",
         },
         {

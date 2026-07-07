@@ -9,18 +9,25 @@ import subprocess
 import sys
 from pathlib import Path
 
+from zr.config import BASE_DIR, accord_headhunter_root
+
 logger = logging.getLogger(__name__)
 
 SUMMARY_PREFIX = "PIPELINE_SUMMARY="
 
 
+def _resolve_export_dir(export_dir: Path) -> Path:
+    path = Path(export_dir)
+    if path.is_absolute():
+        return path.resolve()
+    return (BASE_DIR / path).resolve()
+
+
 def accord_dashboard_dir() -> Path | None:
-    configured = os.getenv("ACCORD_HEADHUNTER_DIR", "").strip()
-    if configured:
-        root = Path(configured).expanduser().resolve()
-        dashboard = root / "dashboard" if (root / "dashboard").is_dir() else root
-        if dashboard.is_dir():
-            return dashboard
+    root = accord_headhunter_root()
+    dashboard = root / "dashboard" if (root / "dashboard").is_dir() else root
+    if dashboard.is_dir():
+        return dashboard
     sibling = Path(__file__).resolve().parents[2] / "dashboard"
     if sibling.is_dir():
         return sibling
@@ -52,9 +59,10 @@ def run_post_export_pipeline(export_dir: Path) -> dict | None:
     venv_python = dashboard / ".venv" / "bin" / "python"
     python = str(venv_python) if venv_python.is_file() else sys.executable
 
-    logger.info("Running post-export pipeline for %s", export_dir)
+    resolved_export = _resolve_export_dir(export_dir)
+    logger.info("Running post-export pipeline for %s", resolved_export)
     result = subprocess.run(
-        [python, str(script), "--export-dir", str(export_dir)],
+        [python, str(script), "--export-dir", str(resolved_export)],
         cwd=str(dashboard),
         capture_output=True,
         text=True,

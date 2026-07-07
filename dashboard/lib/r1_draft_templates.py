@@ -3,57 +3,60 @@
 from __future__ import annotations
 
 from lib.constants import ROLE_TITLE
-from lib.r1_email_invite import build_r1_email_body, build_r1_email_subject
-from lib.r1_invite import build_r1_sms_body, first_name
+from lib.r1_email_invite import (
+    DEFAULT_R1_EMAIL_BODY,
+    DEFAULT_R1_EMAIL_SUBJECT,
+    build_r1_email_body,
+    build_r1_email_subject,
+)
+from lib.r1_invite import DEFAULT_R1_SMS_TEMPLATE, build_r1_sms_body
+
+
+def _format_tpl(
+    template: str,
+    *,
+    full_name: str,
+    calendly_url: str,
+    market: str | None,
+) -> str:
+    from lib.r1_invite import format_message_template
+
+    return format_message_template(
+        template,
+        full_name=full_name,
+        calendly_url=calendly_url,
+        market=market,
+        role=ROLE_TITLE,
+    )
+
 
 SMS_TEMPLATES = [
-    """Hi {first_name} — Accord Group recruiting. You stood out for our {role} role.
-
-Would you have 30 min for a phone screen with our hiring team next week?
-
-Book here: {calendly_url}
+    DEFAULT_R1_SMS_TEMPLATE,
+    """Hi {FirstName} — Accord Group is hiring in {Market}. Your ZipRecruiter profile caught our eye for Project Sales Rep. No roofing background required. Book a quick phone screen: {apply_url}
 
 Reply STOP to opt out.""",
-    """Hi {first_name}, this is Accord Group. We'd like to invite you to a quick phone screen for our {role} opening.
-
-Pick a time here: {calendly_url}
-
-Reply STOP to opt out.""",
-    """{first_name}, thanks for your interest in Accord Group. Your resume looks like a fit for {role}.
-
-Schedule a 30-min call: {calendly_url}
+    """{FirstName}, Accord Group recruiting here. Strong match for our Project Sales Rep role in {Market}. Training provided. Schedule a call: {apply_url}
 
 Reply STOP to opt out.""",
 ]
 
 EMAIL_SUBJECT_TEMPLATES = [
-    "Accord Group — Project Sales Representative phone screen",
-    "Invitation: Accord Group phone screen — Project Sales Rep",
-    "Accord Group recruiting — schedule your phone screen",
+    DEFAULT_R1_EMAIL_SUBJECT,
+    "Accord Group — Project Sales Rep opportunity in {Market}",
+    "Your ZipRecruiter profile — phone screen invite ({Market})",
 ]
 
 EMAIL_BODY_TEMPLATES = [
-    """Hi {first_name},
+    DEFAULT_R1_EMAIL_BODY,
+    """Hi {FirstName},
 
-Thank you for your interest in the {role} role at Accord Group. We'd like to invite you to a 30-minute phone screen with our hiring team.
+Accord Group is hiring Project Sales Representatives in {Market}. Based on your ZipRecruiter resume, we'd like to invite you to a 30-minute phone screen.
 
-Please pick a time that works for you:
-{calendly_url}
+Book here:
+{apply_url}
 
 Best,
-Accord Group Recruiting
-
----
-Accord Group · Lee's Summit, MO
-Reply to this email to reach us. To stop recruiting messages, reply UNSUBSCRIBE.""",
-    """Hi {first_name},
-
-Accord Group is reviewing candidates for {role}, and we'd love to speak with you for a brief 30-minute phone screen.
-
-Book a time here:
-{calendly_url}
-
-Thank you,
+Brittaney
 Accord Group Recruiting
 
 ---
@@ -77,17 +80,18 @@ def template_redraft_r1_sms(
     *,
     previous_draft: str | None = None,
 ) -> str:
-    fn = first_name(candidate.get("full_name") or "")
+    name = candidate.get("full_name") or "Candidate"
+    market = candidate.get("market")
     idx = _pick_index(SMS_TEMPLATES, previous_draft)
-    tpl = SMS_TEMPLATES[idx]
     try:
-        return tpl.format(
-            first_name=fn,
-            role=ROLE_TITLE,
-            calendly_url=calendly_url.strip(),
+        return _format_tpl(
+            SMS_TEMPLATES[idx],
+            full_name=name,
+            calendly_url=calendly_url,
+            market=market,
         ).strip()
-    except KeyError:
-        return build_r1_sms_body(candidate.get("full_name") or "Candidate", calendly_url)
+    except Exception:
+        return build_r1_sms_body(name, calendly_url, market=market)
 
 
 def template_redraft_r1_email(
@@ -97,19 +101,26 @@ def template_redraft_r1_email(
     previous_subject: str | None = None,
     previous_body: str | None = None,
 ) -> tuple[str, str]:
-    fn = first_name(candidate.get("full_name") or "")
+    name = candidate.get("full_name") or "Candidate"
+    market = candidate.get("market")
     subj_idx = _pick_index(EMAIL_SUBJECT_TEMPLATES, previous_subject)
     body_idx = _pick_index(EMAIL_BODY_TEMPLATES, previous_body)
-    subject = EMAIL_SUBJECT_TEMPLATES[subj_idx]
     try:
-        body = EMAIL_BODY_TEMPLATES[body_idx].format(
-            first_name=fn,
-            role=ROLE_TITLE,
-            calendly_url=calendly_url.strip(),
+        subject = _format_tpl(
+            EMAIL_SUBJECT_TEMPLATES[subj_idx],
+            full_name=name,
+            calendly_url=calendly_url,
+            market=market,
         ).strip()
-    except KeyError:
-        return build_r1_email_subject(), build_r1_email_body(
-            candidate.get("full_name") or "Candidate",
-            calendly_url,
+        body = _format_tpl(
+            EMAIL_BODY_TEMPLATES[body_idx],
+            full_name=name,
+            calendly_url=calendly_url,
+            market=market,
+        ).strip()
+    except Exception:
+        return (
+            build_r1_email_subject(full_name=name, calendly_url=calendly_url, market=market),
+            build_r1_email_body(name, calendly_url, market=market),
         )
     return subject, body

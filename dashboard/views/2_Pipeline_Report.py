@@ -24,6 +24,7 @@ from lib.candidate_display import (
     link_button_new_tab,
     personal_network_contact,
 )
+from lib.export_display import format_exported_display
 from lib.candidate_activity import (
     apply_outreach_stage,
     format_activity_line,
@@ -68,9 +69,8 @@ from lib.r1_invite import (
     format_message_template,
     get_calendly_r1_url,
     send_r1_sms,
-    twilio_configured,
 )
-from lib.communications_status import outbound_sends_enabled
+from lib.communications_status import outbound_sends_enabled, sms_ready
 from lib.scoring import combined_r1_decision, format_vote, recommendation_label
 from lib.supabase_client import get_supabase
 
@@ -79,6 +79,14 @@ BULK_SMS_TEMPLATE_KEY = "bulk_sms_template"
 BULK_EMAIL_SUBJECT_KEY = "bulk_email_subject"
 BULK_EMAIL_BODY_KEY = "bulk_email_body"
 PIPELINE_METRIC_FILTER_KEY = "pipeline_metric_filter"
+BULK_TEMPLATE_VERSION_KEY = "bulk_template_version"
+# Bump when default SMS/email copy changes so the bulk editor picks up new templates.
+CURRENT_BULK_TEMPLATE_VERSION = "2026-07-07-accord-defaults"
+
+SAMPLE_PREVIEW_CANDIDATE = {
+    "full_name": "Sample cand",
+    "market": "TGC - KC, MO",
+}
 
 
 def _vote(cid: str, interviewer: str, evals_by_candidate: dict) -> str | None:
@@ -97,7 +105,7 @@ PIPELINE_METRICS: list[dict] = [
     {
         "id": "qualified",
         "label": "Agent qualified",
-        "help": "Resume pre-screen met the bar (55+ / phone screen or better). Stage: Resume qualified.",
+        "help": "Resume pre-screen met the bar (65+). Stage: Resume qualified.",
     },
     {
         "id": "identified",
@@ -225,12 +233,37 @@ def _render_clickable_metrics(
                 st.caption(spec["label"])
 
 
+def _reset_bulk_templates(*, rerun: bool = False) -> None:
+    st.session_state[BULK_SMS_TEMPLATE_KEY] = DEFAULT_R1_SMS_TEMPLATE
+    st.session_state[BULK_EMAIL_SUBJECT_KEY] = DEFAULT_R1_EMAIL_SUBJECT
+    st.session_state[BULK_EMAIL_BODY_KEY] = DEFAULT_R1_EMAIL_BODY
+    st.session_state[BULK_TEMPLATE_VERSION_KEY] = CURRENT_BULK_TEMPLATE_VERSION
+    if rerun:
+        st.rerun()
+
+
 def _init_bulk_message_templates() -> None:
+    if st.session_state.get(BULK_TEMPLATE_VERSION_KEY) != CURRENT_BULK_TEMPLATE_VERSION:
+        for key in (
+            BULK_SMS_TEMPLATE_KEY,
+            BULK_EMAIL_SUBJECT_KEY,
+            BULK_EMAIL_BODY_KEY,
+            BULK_TEMPLATE_VERSION_KEY,
+        ):
+            st.session_state.pop(key, None)
+        _reset_bulk_templates(rerun=True)
+        return
     if BULK_SMS_TEMPLATE_KEY not in st.session_state:
         st.session_state[BULK_SMS_TEMPLATE_KEY] = DEFAULT_R1_SMS_TEMPLATE
     if BULK_EMAIL_SUBJECT_KEY not in st.session_state:
         st.session_state[BULK_EMAIL_SUBJECT_KEY] = DEFAULT_R1_EMAIL_SUBJECT
     if BULK_EMAIL_BODY_KEY not in st.session_state:
+        st.session_state[BULK_EMAIL_BODY_KEY] = DEFAULT_R1_EMAIL_BODY
+    if not (st.session_state.get(BULK_SMS_TEMPLATE_KEY) or "").strip():
+        st.session_state[BULK_SMS_TEMPLATE_KEY] = DEFAULT_R1_SMS_TEMPLATE
+    if not (st.session_state.get(BULK_EMAIL_SUBJECT_KEY) or "").strip():
+        st.session_state[BULK_EMAIL_SUBJECT_KEY] = DEFAULT_R1_EMAIL_SUBJECT
+    if not (st.session_state.get(BULK_EMAIL_BODY_KEY) or "").strip():
         st.session_state[BULK_EMAIL_BODY_KEY] = DEFAULT_R1_EMAIL_BODY
 
 
@@ -244,6 +277,7 @@ def _personalize_preview(candidate: dict, template: str, calendly_url: str) -> s
             template,
             full_name=candidate["full_name"],
             calendly_url=calendly_url,
+            market=candidate.get("market"),
         )
     except (KeyError, ValueError) as exc:
         return f"(Template error: {exc})"
@@ -270,6 +304,7 @@ def _bulk_send_sms(selected_candidates: list[dict], template: str, calendly_url:
                 template,
                 full_name=candidate["full_name"],
                 calendly_url=calendly_url,
+                market=candidate.get("market"),
             )
             sid = send_r1_sms(to_phone=phone, body=body)
             log_sms_sent(
@@ -326,11 +361,13 @@ def _bulk_send_email(
                 subject_template,
                 full_name=candidate["full_name"],
                 calendly_url=calendly_url,
+                market=candidate.get("market"),
             )
             body = format_message_template(
                 body_template,
                 full_name=candidate["full_name"],
                 calendly_url=calendly_url,
+                market=candidate.get("market"),
             )
             msg_id = send_r1_email(to_email=email, subject=subject, body=body)
             log_email_sent(
@@ -480,33 +517,61 @@ def _render_bulk_action_bar(visible_candidates: list[dict], stage_labels: dict) 
 
         st.divider()
         st.markdown("**Bulk messages**")
-        st.caption(placeholder_help)
+        msg_hdr, msg_reset = st.columns([4, 1])
+        with msg_hdr:
+            st.caption(placeholder_help)
+        with msg_reset:
+            if st.button("Reset templates", key="bulk_reset_templates", use_container_width=True):
+                for key in (
+                    BULK_SMS_TEMPLATE_KEY,
+                    BULK_EMAIL_SUBJECT_KEY,
+                    BULK_EMAIL_BODY_KEY,
+                ):
+                    st.session_state.pop(key, None)
+                _reset_bulk_templates(rerun=True)
+
+        preview_candidate = (
+            selected_candidates[0] if selected_candidates else SAMPLE_PREVIEW_CANDIDATE
+        )
+        preview_label = (
+            preview_candidate["full_name"]
+            if selected_candidates
+            else f"{preview_candidate['full_name']} (example — select candidates to preview real names/markets)"
+        )
 
         sms_tab, email_tab = st.tabs(["SMS", "Email"])
         with sms_tab:
             st.text_area(
                 "SMS template",
                 key=BULK_SMS_TEMPLATE_KEY,
-                height=180,
+                height=140,
                 help=placeholder_help,
             )
-            if selected_candidates:
-                preview_name = selected_candidates[0]["full_name"]
-                st.caption(f"Preview for **{preview_name}**:")
-                st.text(_personalize_preview(selected_candidates[0], st.session_state[BULK_SMS_TEMPLATE_KEY], calendly_url))
-                if len(selected_candidates) > 1:
-                    with st.expander(f"Preview all {len(selected_candidates)} selected"):
-                        for candidate in selected_candidates:
-                            st.markdown(f"**{candidate['full_name']}**")
-                            st.text(_personalize_preview(candidate, st.session_state[BULK_SMS_TEMPLATE_KEY], calendly_url))
-                            st.divider()
-            else:
-                st.caption("Select candidates above to preview personalized SMS.")
+            st.caption(f"Preview for **{preview_label}**:")
+            st.text(
+                _personalize_preview(
+                    preview_candidate,
+                    st.session_state[BULK_SMS_TEMPLATE_KEY],
+                    calendly_url,
+                )
+            )
+            if selected_candidates and len(selected_candidates) > 1:
+                with st.expander(f"Preview all {len(selected_candidates)} selected"):
+                    for candidate in selected_candidates:
+                        st.markdown(f"**{candidate['full_name']}**")
+                        st.text(
+                            _personalize_preview(
+                                candidate,
+                                st.session_state[BULK_SMS_TEMPLATE_KEY],
+                                calendly_url,
+                            )
+                        )
+                        st.divider()
 
             if not outbound_sends_enabled():
                 st.info("Bulk SMS send is disabled (`OUTBOUND_SENDS_ENABLED=false`). Draft and preview only.")
-            elif not twilio_configured() or not calendly_configured():
-                st.warning("Configure Twilio and Calendly before sending bulk SMS.")
+            elif not sms_ready():
+                st.warning("Configure Heymarket (or Twilio) and Calendly before sending bulk SMS.")
 
             if st.button(
                 "Send SMS to selected",
@@ -514,9 +579,7 @@ def _render_bulk_action_bar(visible_candidates: list[dict], stage_labels: dict) 
                 type="primary",
                 disabled=not (
                     selected_in_view
-                    and outbound_sends_enabled()
-                    and twilio_configured()
-                    and calendly_configured()
+                    and sms_ready()
                 ),
             ):
                 sent, errors = _bulk_send_sms(
@@ -540,27 +603,35 @@ def _render_bulk_action_bar(visible_candidates: list[dict], stage_labels: dict) 
             st.text_area(
                 "Email body",
                 key=BULK_EMAIL_BODY_KEY,
-                height=220,
+                height=320,
                 help=placeholder_help,
             )
-            if selected_candidates:
-                preview_name = selected_candidates[0]["full_name"]
-                st.caption(f"Preview for **{preview_name}**:")
-                st.markdown(
-                    f"**Subject:** {_personalize_preview(selected_candidates[0], st.session_state[BULK_EMAIL_SUBJECT_KEY], calendly_url)}"
+            st.caption(f"Preview for **{preview_label}**:")
+            st.markdown(
+                f"**Subject:** {_personalize_preview(preview_candidate, st.session_state[BULK_EMAIL_SUBJECT_KEY], calendly_url)}"
+            )
+            st.text(
+                _personalize_preview(
+                    preview_candidate,
+                    st.session_state[BULK_EMAIL_BODY_KEY],
+                    calendly_url,
                 )
-                st.text(_personalize_preview(selected_candidates[0], st.session_state[BULK_EMAIL_BODY_KEY], calendly_url))
-                if len(selected_candidates) > 1:
-                    with st.expander(f"Preview all {len(selected_candidates)} selected"):
-                        for candidate in selected_candidates:
-                            st.markdown(f"**{candidate['full_name']}**")
-                            st.markdown(
-                                f"Subject: {_personalize_preview(candidate, st.session_state[BULK_EMAIL_SUBJECT_KEY], calendly_url)}"
+            )
+            if selected_candidates and len(selected_candidates) > 1:
+                with st.expander(f"Preview all {len(selected_candidates)} selected"):
+                    for candidate in selected_candidates:
+                        st.markdown(f"**{candidate['full_name']}**")
+                        st.markdown(
+                            f"Subject: {_personalize_preview(candidate, st.session_state[BULK_EMAIL_SUBJECT_KEY], calendly_url)}"
+                        )
+                        st.text(
+                            _personalize_preview(
+                                candidate,
+                                st.session_state[BULK_EMAIL_BODY_KEY],
+                                calendly_url,
                             )
-                            st.text(_personalize_preview(candidate, st.session_state[BULK_EMAIL_BODY_KEY], calendly_url))
-                            st.divider()
-            else:
-                st.caption("Select candidates above to preview personalized email.")
+                        )
+                        st.divider()
 
             if not outbound_sends_enabled():
                 st.info("Bulk email send is disabled (`OUTBOUND_SENDS_ENABLED=false`). Draft and preview only.")
@@ -638,7 +709,7 @@ def _display_name(c: dict) -> str:
     return f"★ {name}" if has_personal_network(c) else name
 
 
-def _render_table(candidates, evals_by_candidate, stage_labels):
+def _render_table(candidates, evals_by_candidate, stage_labels, activities_by_candidate):
     if not candidates:
         st.info("No candidates to show in table.")
         return
@@ -661,6 +732,9 @@ def _render_table(candidates, evals_by_candidate, stage_labels):
                 "Market": c.get("market") or "—",
                 "Stage": stage_labels.get(c["pipeline_stage"], c["pipeline_stage"]),
                 "Outreach": format_outreach_summary(c),
+                "Exported": format_exported_display(
+                    c, activities=activities_by_candidate.get(c["id"], [])
+                ),
                 "Source": c.get("source") or "—",
                 "Phone": c.get("phone") or "—",
                 "Email": c.get("email") or "—",
@@ -690,14 +764,17 @@ def _render_r1_invite(c: dict) -> None:
 
         if not calendly_configured() and not calendly_url:
             st.warning("Add `CALENDLY_R1_URL` to `dashboard/.env` or Streamlit Secrets.")
-        if not twilio_configured():
-            st.info("Twilio not configured yet — you can still draft and approve copy below.")
+        if not sms_ready() and not calendly_configured():
+            st.info("SMS not configured yet — you can still draft and approve copy below.")
+        elif not sms_ready():
+            st.info("Configure Heymarket (or Twilio) to send SMS.")
         if not outbound_sends_enabled():
             st.warning("Send SMS is disabled — set `OUTBOUND_SENDS_ENABLED=true` in `.env` when ready to send.")
 
         default_body = build_r1_sms_body(
             c["full_name"],
             calendly_url or "https://calendly.com/your-link",
+            market=c.get("market"),
         )
         draft_key = _sms_draft_key(c["id"])
         pending_key = f"{draft_key}_pending"
@@ -747,7 +824,7 @@ def _render_r1_invite(c: dict) -> None:
             send_btn = col_send.form_submit_button(
                 "Send SMS",
                 type="primary",
-                disabled=not (outbound_sends_enabled() and twilio_configured() and calendly_url),
+                disabled=not (outbound_sends_enabled() and sms_ready() and calendly_url),
             )
 
             if save_only:
@@ -766,8 +843,8 @@ def _render_r1_invite(c: dict) -> None:
                     st.error("Outbound sends are disabled — see Communications page.")
                 elif not calendly_url:
                     st.error("CALENDLY_R1_URL is missing.")
-                elif not twilio_configured():
-                    st.error("Twilio credentials missing — see Communications page.")
+                elif not sms_ready():
+                    st.error("SMS credentials missing — see Communications page.")
                 elif not sms_body.strip():
                     st.error("SMS message cannot be empty.")
                 else:
@@ -818,10 +895,15 @@ def _render_r1_email_invite(c: dict) -> None:
         if not outbound_sends_enabled():
             st.warning("Send email is disabled — set `OUTBOUND_SENDS_ENABLED=true` in `.env` when ready to send.")
 
-        default_subject = build_r1_email_subject()
+        default_subject = build_r1_email_subject(
+            full_name=c["full_name"],
+            calendly_url=calendly_url or "https://calendly.com/your-link",
+            market=c.get("market"),
+        )
         default_body = build_r1_email_body(
             c["full_name"],
             calendly_url or "https://calendly.com/your-link",
+            market=c.get("market"),
         )
         subject_key = _email_subject_key(c["id"])
         body_key = _email_body_key(c["id"])
@@ -1026,6 +1108,11 @@ def _render_candidate_card_body(
         if rationale:
             st.markdown(rationale)
         st.write(f"**Source:** {c.get('source') or '—'}")
+        exported_label = format_exported_display(c, activities=activities)
+        if exported_label != "—":
+            st.write(f"**Exported:** {exported_label}")
+            if c.get("export_batch"):
+                st.caption(f"Batch `{c['export_batch']}`")
         if c.get("email"):
             st.write(f"**Email:** {c['email']}")
         if c.get("phone"):
@@ -1122,8 +1209,10 @@ def _render_candidate_card_body(
 st.title("Pipeline report")
 st.caption(
     "Project Sales Rep resumes scored on 100-point rubric · "
-    "85+ Strong interview · 70–84 Good candidate · 55–69 Phone screen · <55 Likely not a fit"
+    "85+ Strong interview · 70–84 Good candidate · 60–69 Phone screen · <60 Likely not a fit"
 )
+
+_init_bulk_message_templates()
 
 sb = get_supabase()
 
@@ -1203,7 +1292,7 @@ _render_bulk_action_bar(filtered, stage_labels)
 view = st.radio("View", ["By stage", "Table"], horizontal=True)
 
 if view == "Table":
-    _render_table(filtered, evals_by_candidate, stage_labels)
+    _render_table(filtered, evals_by_candidate, stage_labels, activities_by_candidate)
 else:
     grouped: dict[str, list] = {s: [] for s in PIPELINE_DISPLAY_ORDER}
     for c in filtered:
@@ -1219,6 +1308,14 @@ else:
             f"{stage_labels.get(stage, stage)} ({len(sorted_group)})",
             expanded=stage in ("qualified", "outreached", "round_1_scheduled"),
         ):
+            stage_ids = [c["id"] for c in sorted_group]
+            if st.button(
+                "Select all",
+                key=f"stage_select_all_{stage}",
+                use_container_width=False,
+            ):
+                _select_all_visible(stage_ids)
+                st.rerun()
             for c in sorted_group:
                 _render_candidate_card(
                     c,

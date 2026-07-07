@@ -92,8 +92,8 @@ Reference: `Project Sales Rep Resume Scoring Rubric.pdf` · Sample: Jordan Marti
 |-------|----------------|
 | **85–100** | **Strong interview** — prioritize for interview |
 | **70–84** | **Good candidate** — interview if resume aligns with team needs |
-| **55–69** | **Phone screen** — screen by phone first |
-| **Below 55** | **Likely not a fit** — unless strong referral or unique background |
+| **60–69** | **Phone screen** — screen by phone first |
+| **Below 60** | **Likely not a fit** — unless strong referral or unique background |
 
 ---
 

@@ -82,11 +82,11 @@ RED_FLAG_MAX_DEDUCTION = 15
 SCORE_BANDS = [
     (85, "Strong interview"),
     (70, "Good candidate"),
-    (55, "Phone screen"),
+    (60, "Phone screen"),
     (0, "Likely not a fit"),
 ]
 
-QUALIFIED_MIN_SCORE = 70
+QUALIFIED_MIN_SCORE = 65
 
 # Legacy R1 phone-screen dimensions (1–4) — kept for interviewer scorecards
 SCORE_LABELS = {

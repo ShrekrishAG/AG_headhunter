@@ -35,8 +35,8 @@ Every resume is scored against the **Project Sales Rep Resume Scoring Rubric**:
 |-------|----------------|--------|
 | **85–100** | Strong interview | Prioritize for in-person interview |
 | **70–84** | Good candidate | Interview if aligned with team needs |
-| **55–69** | Phone screen | 5–10 min call first (IdealTraits process) |
-| **Below 55** | Likely not a fit | Hold unless strong referral |
+| **60–69** | Phone screen | 5–10 min call first (IdealTraits process) |
+| **Below 60** | Likely not a fit | Hold unless strong referral |
 
 **Categories (100 pts):** Sales Experience (25) · Project/Field (20) · Customer Relationships (15) · Communication (15) · Technical/Tools (10) · Work Ethic (10) · minus Red Flags (up to 15)
 

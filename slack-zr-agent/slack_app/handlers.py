@@ -12,13 +12,22 @@ from slack_sdk.web.async_client import AsyncWebClient
 
 from slack_app.messages import (
     APPROVE_LOGIN_ACTION,
+    APPROVE_UNLOCK_ACTION,
     DECLINE_LOGIN_ACTION,
+    DECLINE_UNLOCK_ACTION,
+    EXPORT_AFTER_UNLOCK_ACTION,
     EXPORT_CANDIDATES_ACTION,
     EXPORT_MODAL_CALLBACK,
     REFRESH_PROJECTS_ACTION,
+    REVIEW_CANDIDATES_ACTION,
+    REVIEW_MODAL_CALLBACK,
+    SKIP_EXPORT_AFTER_UNLOCK_ACTION,
+    export_after_unlock_blocks,
     export_candidates_modal,
     permission_request_blocks,
     refresh_projects_blocks,
+    review_candidates_modal,
+    unlock_confirmation_blocks,
 )
 from zr.browser import ZipRecruiterSessionError
 from zr.config import (
@@ -31,11 +40,38 @@ from zr.config import (
 from zr.export import export_all_candidates, format_export_for_slack
 from zr.export_options import ExportOptions, parse_export_options, parse_slack_modal_values
 from zr.headhunter_pipeline import format_pipeline_slack_message, run_post_export_pipeline
+from zr.pipeline_review import (
+    PipelineReviewResult,
+    format_review_for_slack,
+    run_pipeline_review,
+    unlock_review_top,
+)
 from zr.projects import fetch_projects, format_projects_for_slack
+from zr.review_options import (
+    ReviewOptions,
+    parse_review_options,
+    parse_slack_review_modal_values,
+)
+from zr.review_sessions import create_session, drop_session, get_session, update_session
 
 logger = logging.getLogger(__name__)
 
 app = AsyncApp(token=SLACK_BOT_TOKEN, signing_secret=SLACK_SIGNING_SECRET)
+
+
+def _slack_block_text(text: str, *, limit: int = 2900) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+def _review_block_summary(message: str, unlock_count: int) -> str:
+    first_lines = message.splitlines()[:6]
+    summary = "\n".join(first_lines).strip()
+    if not summary:
+        summary = f"Review complete. Unlock {unlock_count} candidate(s)?"
+    summary = _slack_block_text(summary, limit=900)
+    return f"{summary}\n\nUnlock *{unlock_count}* candidate(s)?"
 
 
 def _is_authorized(user_id: str | None) -> bool:
@@ -69,6 +105,208 @@ async def _upload_export_files(
             f"Export bundle: CSV + {result.resume_count} resume PDF(s). "
             "Unzip to get the `resumes/` folder."
         ),
+    )
+
+
+async def _run_pipeline_review_flow(
+    client: AsyncWebClient,
+    channel: str,
+    thread_ts: str | None,
+    options: ReviewOptions,
+) -> None:
+    await client.chat_postMessage(
+        channel=channel,
+        thread_ts=thread_ts,
+        text=(
+            "Reviewing locked pipeline candidates on ZipRecruiter. "
+            f"{options.summary_line()}\n"
+            "This may take a few minutes (browser + AI scoring)..."
+        ),
+    )
+
+    try:
+        result = await run_pipeline_review(options)
+        message = format_review_for_slack(result)
+        session = create_session(
+            channel=channel,
+            thread_ts=thread_ts,
+            result=result,
+        )
+        response = await client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            text=message,
+            blocks=[
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": _review_block_summary(
+                            message, result.total_unlock_count
+                        ),
+                    },
+                },
+                *unlock_confirmation_blocks(
+                    session.session_id, result.total_unlock_count
+                ),
+            ],
+        )
+        session.thread_ts = thread_ts or response.get("ts")
+    except ZipRecruiterSessionError as error:
+        await client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            text=(
+                f"ZipRecruiter pipeline review error:\n```{error}```\n"
+                "Try: `python login.py` then run `/zr-review` again."
+            ),
+        )
+    except Exception as error:
+        logger.exception("Pipeline review failed")
+        await client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            text=f"Unexpected error during pipeline review:\n```{error}```",
+        )
+
+
+async def _run_unlock_for_session(
+    client: AsyncWebClient,
+    session_id: str,
+) -> None:
+    session = get_session(session_id)
+    if not session:
+        logger.warning("Unlock session not found: %s", session_id)
+        return
+
+    channel = session.channel
+    thread_ts = session.thread_ts
+    targets = session.top_to_unlock()
+    if not targets:
+        await client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            text="No candidates selected to unlock.",
+        )
+        drop_session(session_id)
+        return
+
+    credit_count = session.total_unlock_count
+    project_summary = ", ".join(
+        f"{slice_.project.name} ({len(slice_.top_candidates)})"
+        for slice_ in session.slices
+        if slice_.top_candidates
+    )
+    await client.chat_postMessage(
+        channel=channel,
+        thread_ts=thread_ts,
+        text=(
+            f"Unlocking *{credit_count}* candidate(s) across "
+            f"{len(session.slices)} project(s) ({credit_count} credit(s))...\n"
+            f"• {project_summary}"
+        ),
+    )
+
+    try:
+        result = PipelineReviewResult(slices=list(session.slices))
+        unlocked_by_project = await unlock_review_top(result)
+        unlocked_total = sum(len(items) for items in unlocked_by_project.values())
+        detail_lines = []
+        for project_name, unlocked in unlocked_by_project.items():
+            names = ", ".join(candidate.name for candidate in unlocked) or "none"
+            detail_lines.append(f"• *{project_name}*: {names}")
+        if thread_ts:
+            session.thread_ts = thread_ts
+        update_session(session)
+        await client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            text=(
+                f"Unlocked *{unlocked_total}* candidate(s) "
+                f"({unlocked_total} credit(s) spent).\n"
+                + "\n".join(detail_lines)
+                + "\n\nExport and sync to Accord?"
+            ),
+            blocks=[
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": (
+                            f"Unlocked *{unlocked_total}* candidate(s). "
+                            "Export CSV + resumes and run the post-export pipeline?"
+                        ),
+                    },
+                },
+                *export_after_unlock_blocks(session_id),
+            ],
+        )
+    except ZipRecruiterSessionError as error:
+        await client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            text=f"Unlock failed:\n```{error}```",
+        )
+        drop_session(session_id)
+    except Exception as error:
+        logger.exception("Unlock flow failed")
+        await client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            text=f"Unexpected error during unlock:\n```{error}```",
+        )
+        drop_session(session_id)
+
+
+async def _run_export_after_unlock(
+    client: AsyncWebClient,
+    session_id: str,
+    *,
+    channel: str | None = None,
+    thread_ts: str | None = None,
+) -> None:
+    session = get_session(session_id)
+    if not session:
+        logger.warning("Export session not found: %s", session_id)
+        if channel:
+            await client.chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                text=(
+                    "I could not find the review session for that export button. "
+                    "The bot may have restarted after unlock.\n\n"
+                    "Run `/zr-export` and set per-project limits, e.g.:\n"
+                    "`TGC - St Louis=10`\n"
+                    "`TGC - KC, MO=10`"
+                ),
+            )
+        return
+
+    target_channel = channel or session.channel
+    target_thread = thread_ts or session.thread_ts
+    project_limits = session.export_project_limits()
+    if not project_limits:
+        await client.chat_postMessage(
+            channel=target_channel,
+            thread_ts=target_thread,
+            text="No candidates were queued for export from that review session.",
+        )
+        drop_session(session_id)
+        return
+
+    options = ExportOptions(
+        default_per_project_limit=None,
+        project_limits=project_limits,
+    )
+
+    drop_session(session_id)
+    logger.info(
+        "Starting post-unlock export for session %s with limits %s",
+        session_id,
+        project_limits,
+    )
+    await _run_candidate_export(
+        client, target_channel, thread_ts=target_thread, options=options
     )
 
 
@@ -238,6 +476,23 @@ async def _handle_zr_projects_command(ack, command, client):
     await _run_project_fetch(client, channel_id)
 
 
+def _wants_pipeline_review(text: str) -> bool:
+    lowered = text.lower()
+    return any(
+        keyword in lowered
+        for keyword in (
+            "zr-review",
+            "pipeline review",
+            "review pipeline",
+            "review top",
+            "unlock top",
+            "qualify top",
+            "score top",
+            "review locked",
+        )
+    )
+
+
 def _wants_candidate_export(text: str) -> bool:
     lowered = text.lower()
     return any(
@@ -283,6 +538,19 @@ async def handle_direct_message(event, client, logger):
         return
 
     text = event.get("text") or ""
+    if _wants_pipeline_review(text):
+        if not _is_authorized(user_id):
+            await client.chat_postMessage(
+                channel=event["channel"],
+                text="You are not authorized to use the ZipRecruiter agent.",
+            )
+            return
+
+        logger.info("DM pipeline review request from user %s", user_id)
+        options = parse_review_options(text)
+        await _run_pipeline_review_flow(client, event["channel"], None, options=options)
+        return
+
     if _wants_candidate_export(text):
         if not _is_authorized(user_id):
             await client.chat_postMessage(
@@ -308,6 +576,40 @@ async def handle_direct_message(event, client, logger):
 
     logger.info("DM project request from user %s", user_id)
     await _run_project_fetch(client, event["channel"])
+
+
+@app.command("/zr-review")
+async def handle_zr_review(ack, command, client):
+    await ack()
+
+    user_id = command.get("user_id")
+    channel_id = command["channel_id"]
+
+    if not _is_authorized(user_id):
+        await client.chat_postEphemeral(
+            channel=channel_id,
+            user=user_id,
+            text="You are not authorized to run the ZipRecruiter agent.",
+        )
+        return
+
+    command_text = (command.get("text") or "").strip()
+    if not command_text:
+        metadata = json.dumps({"channel": channel_id, "thread_ts": None})
+        modal = review_candidates_modal()
+        modal["private_metadata"] = metadata
+        await client.views_open(
+            trigger_id=command["trigger_id"],
+            view=modal,
+        )
+        return
+
+    await _run_pipeline_review_flow(
+        client,
+        channel_id,
+        None,
+        options=parse_review_options(command_text),
+    )
 
 
 @app.command("/zr-export")
@@ -399,6 +701,95 @@ async def handle_refresh_projects(ack, body, client):
     asyncio.create_task(_run_project_fetch(client, channel, thread_ts=message_ts))
 
 
+@app.action(APPROVE_UNLOCK_ACTION)
+async def handle_approve_unlock(ack, body, client):
+    await ack()
+
+    user_id = body.get("user", {}).get("id")
+    channel = body["channel"]["id"]
+    message_ts = body.get("message", {}).get("ts")
+    session_id = body.get("actions", [{}])[0].get("value", "")
+
+    if not _is_authorized(user_id):
+        await client.chat_postEphemeral(
+            channel=channel,
+            user=user_id,
+            text="You are not authorized to unlock ZipRecruiter candidates.",
+        )
+        return
+
+    if not session_id:
+        return
+
+    asyncio.create_task(_run_unlock_for_session(client, session_id))
+
+
+@app.action(DECLINE_UNLOCK_ACTION)
+async def handle_decline_unlock(ack, body, client):
+    await ack()
+
+    channel = body["channel"]["id"]
+    message_ts = body.get("message", {}).get("ts")
+    session_id = body.get("actions", [{}])[0].get("value", "")
+    drop_session(session_id)
+    await client.chat_postMessage(
+        channel=channel,
+        thread_ts=message_ts,
+        text="Skipped unlock. No credits spent.",
+    )
+
+
+@app.action(EXPORT_AFTER_UNLOCK_ACTION)
+async def handle_export_after_unlock(ack, body, client):
+    await ack()
+
+    user_id = body.get("user", {}).get("id")
+    channel = body["channel"]["id"]
+    session_id = body.get("actions", [{}])[0].get("value", "")
+
+    if not _is_authorized(user_id):
+        await client.chat_postEphemeral(
+            channel=channel,
+            user=user_id,
+            text="You are not authorized to export ZipRecruiter candidates.",
+        )
+        return
+
+    if not session_id:
+        return
+
+    message_ts = body.get("message", {}).get("ts")
+    session = get_session(session_id)
+    if session:
+        if not session.thread_ts:
+            session.thread_ts = message_ts
+        update_session(session)
+
+    asyncio.create_task(
+        _run_export_after_unlock(
+            client,
+            session_id,
+            channel=channel,
+            thread_ts=message_ts,
+        )
+    )
+
+
+@app.action(SKIP_EXPORT_AFTER_UNLOCK_ACTION)
+async def handle_skip_export_after_unlock(ack, body, client):
+    await ack()
+
+    channel = body["channel"]["id"]
+    message_ts = body.get("message", {}).get("ts")
+    session_id = body.get("actions", [{}])[0].get("value", "")
+    drop_session(session_id)
+    await client.chat_postMessage(
+        channel=channel,
+        thread_ts=message_ts,
+        text="Skipped export. Unlocked candidates remain in ZipRecruiter.",
+    )
+
+
 @app.action(EXPORT_CANDIDATES_ACTION)
 async def handle_export_candidates(ack, body, client):
     await ack()
@@ -453,6 +844,61 @@ async def handle_export_modal_submission(ack, body, client, view):
     )
 
 
+@app.action(REVIEW_CANDIDATES_ACTION)
+async def handle_review_candidates(ack, body, client):
+    await ack()
+
+    user_id = body.get("user", {}).get("id")
+    channel = body["channel"]["id"]
+
+    if not _is_authorized(user_id):
+        await client.chat_postEphemeral(
+            channel=channel,
+            user=user_id,
+            text="You are not authorized to review ZipRecruiter candidates.",
+        )
+        return
+
+    thread_ts = body.get("message", {}).get("ts")
+    metadata = json.dumps({"channel": channel, "thread_ts": thread_ts})
+
+    modal = review_candidates_modal()
+    modal["private_metadata"] = metadata
+
+    await client.views_open(
+        trigger_id=body["trigger_id"],
+        view=modal,
+    )
+
+
+@app.view(REVIEW_MODAL_CALLBACK)
+async def handle_review_modal_submission(ack, body, client, view):
+    await ack()
+
+    user_id = body.get("user", {}).get("id")
+    if not _is_authorized(user_id):
+        return
+
+    options = parse_slack_review_modal_values(view.get("state", {}).get("values", {}))
+
+    metadata_raw = body.get("view", {}).get("private_metadata") or "{}"
+    try:
+        metadata = json.loads(metadata_raw)
+    except json.JSONDecodeError:
+        metadata = {}
+
+    channel = metadata.get("channel")
+    thread_ts = metadata.get("thread_ts")
+    if not channel:
+        channel = await open_dm_channel(client, user_id)
+
+    asyncio.create_task(
+        _run_pipeline_review_flow(
+            client, channel, thread_ts=thread_ts, options=options
+        )
+    )
+
+
 @app.event("app_mention")
 async def handle_app_mention(event, client, say):
     user_id = event.get("user")
@@ -461,7 +907,14 @@ async def handle_app_mention(event, client, say):
         return
 
     text = (event.get("text") or "").lower()
-    if _wants_candidate_export(text):
+    if _wants_pipeline_review(text):
+        await _run_pipeline_review_flow(
+            client,
+            event["channel"],
+            None,
+            options=parse_review_options(event.get("text") or ""),
+        )
+    elif _wants_candidate_export(text):
         await _run_candidate_export(
             client,
             event["channel"],
@@ -472,7 +925,7 @@ async def handle_app_mention(event, client, say):
     else:
         await say(
             "Hi. Type *list my projects*, *export 5 candidates per project*, "
-            "use `/zr-projects` or `/zr-export 5`."
+            "*review top 10 per project*, or use `/zr-projects`, `/zr-export`, `/zr-review`."
         )
 
 

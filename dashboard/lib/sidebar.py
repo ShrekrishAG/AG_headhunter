@@ -66,8 +66,8 @@ def render_position_selector() -> str:
     return st.session_state.role_slug
 
 
-def render_sidebar_footer(*, communications_page) -> None:
-    """Bottom-left: Accord logo + Communications (separate from main nav)."""
+def render_sidebar_footer(*, communications_page, outreach_log_page) -> None:
+    """Bottom-left: Accord logo + Communications / Outreach log."""
     st.markdown('<div class="accord-sidebar-push"></div>', unsafe_allow_html=True)
     st.divider()
     if LOGO_PATH.exists():
@@ -75,6 +75,7 @@ def render_sidebar_footer(*, communications_page) -> None:
         st.image(str(LOGO_PATH), use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
     st.page_link(communications_page, label="Communications", use_container_width=True)
+    st.page_link(outreach_log_page, label="Outreach log", use_container_width=True)
 
 
 def render_sidebar_nav(
@@ -82,6 +83,7 @@ def render_sidebar_nav(
     dashboard_page,
     process_page,
     communications_page,
+    outreach_log_page,
     pipeline_page,
     r1_page,
 ) -> None:
@@ -97,4 +99,4 @@ def render_sidebar_nav(
         request_job_description_dialog(role_slug)
     with st.expander("Interview Forms", expanded=True):
         st.page_link(r1_page, label="R1 Scoring", use_container_width=True)
-    render_sidebar_footer(communications_page=communications_page)
+    render_sidebar_footer(communications_page=communications_page, outreach_log_page=outreach_log_page)

@@ -42,6 +42,11 @@ communications_page = st.Page(
     title="Communications",
     url_path="communications",
 )
+outreach_log_page = st.Page(
+    f"{VIEWS}/6_Outreach_Log.py",
+    title="Outreach log",
+    url_path="outreach-log",
+)
 pipeline_page = st.Page(
     f"{VIEWS}/2_Pipeline_Report.py",
     title="Pipeline",
@@ -60,6 +65,7 @@ legacy_pages = [
     st.Page(f"{VIEWS}/4_Dashboard.py", title="Dashboard", url_path="4_Dashboard"),
     st.Page(f"{VIEWS}/0_Process.py", title="Process", url_path="0_Process"),
     st.Page(f"{VIEWS}/5_Communications_Setup.py", title="Communications", url_path="5_Communications_Setup"),
+    st.Page(f"{VIEWS}/6_Outreach_Log.py", title="Outreach log", url_path="6_Outreach_Log"),
     st.Page(f"{VIEWS}/2_Pipeline_Report.py", title="Pipeline", url_path="2_Pipeline_Report"),
     st.Page(f"{VIEWS}/3_Job_Description.py", title="Job Description", url_path="3_Job_Description"),
     st.Page(f"{VIEWS}/1_R1_Scoring.py", title="R1 Scoring", url_path="1_R1_Scoring"),
@@ -75,7 +81,7 @@ pg = st.navigation(
             *legacy_pages,
         ],
         "Interview Forms": [r1_page],
-        "Settings": [communications_page],
+        "Settings": [communications_page, outreach_log_page],
     },
     position="hidden",
 )
@@ -85,6 +91,7 @@ with st.sidebar:
         dashboard_page=dashboard_page,
         process_page=process_page,
         communications_page=communications_page,
+        outreach_log_page=outreach_log_page,
         pipeline_page=pipeline_page,
         r1_page=r1_page,
     )

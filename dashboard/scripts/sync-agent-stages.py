@@ -21,6 +21,10 @@ from lib.agent_prescreen import (  # noqa: E402
     profile_path_for,
 )
 from lib.constants import ROLE_SLUG  # noqa: E402
+from lib.export_eligibility import (  # noqa: E402
+    build_earliest_export_by_email,
+    eligible_for_resume_qualification,
+)
 from lib.rubric import qualifies_for_pipeline  # noqa: E402
 
 load_dotenv(DASHBOARD / ".env")
@@ -28,12 +32,21 @@ load_dotenv(DASHBOARD / ".env")
 EARLY_STAGES = {"identified", "qualified"}
 
 
-def stage_from_profile(candidate: dict) -> str | None:
+def stage_from_profile(
+    candidate: dict,
+    *,
+    earliest_by_email: dict | None = None,
+) -> str | None:
     score = parse_agent_score(candidate)
     rec = parse_agent_recommendation(candidate)
     if score is None or not rec:
         return None
-    if qualifies_for_pipeline(score, rec):
+    if (
+        qualifies_for_pipeline(score, rec)
+        and eligible_for_resume_qualification(
+            candidate, earliest_by_email=earliest_by_email
+        )
+    ):
         return "qualified"
     return "identified"
 
@@ -66,10 +79,11 @@ def main() -> int:
         return 1
 
     sb = create_client(url, key)
+    earliest_by_email = build_earliest_export_by_email()
     role_id = sb.table("roles").select("id").eq("slug", ROLE_SLUG).execute().data[0]["id"]
     rows = (
         sb.table("candidates")
-        .select("id, full_name, pipeline_stage, notes")
+        .select("id, full_name, email, created_at, pipeline_stage, notes")
         .eq("role_id", role_id)
         .execute()
         .data
@@ -77,7 +91,7 @@ def main() -> int:
 
     updated = skipped = no_score = 0
     for row in rows:
-        new_stage = stage_from_profile(row)
+        new_stage = stage_from_profile(row, earliest_by_email=earliest_by_email)
         if new_stage is None:
             no_score += 1
             print(f"No score: {row['full_name']}")

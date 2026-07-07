@@ -24,13 +24,17 @@ DEFAULT_EMAIL = "shreya@dollfamilyoffice.com"
 DEFAULT_NAME = "Sample cand"
 
 
+DEFAULT_MARKET = "TGC - KC, MO"
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Test Twilio SMS and SendGrid email")
+    parser = argparse.ArgumentParser(description="Test Heymarket SMS and SendGrid email")
     parser.add_argument("--sms", action="store_true", help="Send test SMS")
     parser.add_argument("--email", action="store_true", help="Send test email")
     parser.add_argument("--phone", default=DEFAULT_PHONE)
     parser.add_argument("--to-email", dest="to_email", default=DEFAULT_EMAIL)
     parser.add_argument("--name", default=DEFAULT_NAME)
+    parser.add_argument("--market", default=DEFAULT_MARKET, help="ZipRecruiter market / project name")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -49,16 +53,16 @@ def main() -> int:
             if not outbound_sends_enabled():
                 print("SMS blocked — OUTBOUND_SENDS_ENABLED=false (set true in .env to send)")
             else:
-                print("SMS not ready — check TWILIO_* (Account SID must start with AC) and CALENDLY_R1_URL")
+                print("SMS not ready — check HEYMARKET_* or TWILIO_* and CALENDLY_R1_URL")
             failed += 1
         else:
-            body = build_r1_sms_body(args.name, cal)
+            body = build_r1_sms_body(args.name, cal, market=args.market)
             print(f"SMS to {args.phone}:\n{body}\n")
             if args.dry_run:
                 print("(dry-run — not sent)")
             else:
                 try:
-                    sid = send_r1_sms(to_phone=args.phone, body=body)
+                    sid = send_r1_sms(to_phone=args.phone, body=body, conv_name=args.name)
                     print(f"SMS sent — SID {sid}")
                 except Exception as exc:
                     print(f"SMS failed: {exc}")
@@ -72,8 +76,12 @@ def main() -> int:
                 print("Email not ready — check SENDGRID_* and CALENDLY_R1_URL")
             failed += 1
         else:
-            subject = build_r1_email_subject()
-            body = build_r1_email_body(args.name, cal)
+            subject = build_r1_email_subject(
+                full_name=args.name,
+                calendly_url=cal,
+                market=args.market,
+            )
+            body = build_r1_email_body(args.name, cal, market=args.market)
             print(f"Email to {args.to_email}\nSubject: {subject}\n{body}\n")
             if args.dry_run:
                 print("(dry-run — not sent)")

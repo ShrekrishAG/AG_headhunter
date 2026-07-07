@@ -93,17 +93,29 @@ async def export_all_candidates(options: ExportOptions | None = None) -> ExportR
     async with ziprecruiter_context() as (_, page):
         await ensure_logged_in(page)
         project_result = await fetch_projects_on_page(page)
-        projects = [
-            project
-            for project in project_result.projects
-            if project.unlocked_count not in (None, 0)
-            and export_options.should_export_project(project)
-        ]
-
-        if not projects:
-            raise ZipRecruiterSessionError(
+        if export_options.project_limits:
+            projects = [
+                project
+                for project in project_result.projects
+                if project.project_id and export_options.should_export_project(project)
+            ]
+            empty_message = (
+                "No matching projects were found to export. "
+                "Check project names/ids in the review session."
+            )
+        else:
+            projects = [
+                project
+                for project in project_result.projects
+                if project.unlocked_count not in (None, 0)
+                and export_options.should_export_project(project)
+            ]
+            empty_message = (
                 "No matching projects with unlocked candidates were found to export."
             )
+
+        if not projects:
+            raise ZipRecruiterSessionError(empty_message)
 
         await validate_rdb_api_access(page, projects[0].project_id)
 

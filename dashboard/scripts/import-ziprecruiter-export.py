@@ -54,6 +54,7 @@ def copy_resumes(export_dir: Path, import_date: str) -> tuple[int, int, list[dic
     INBOX_ZR.mkdir(parents=True, exist_ok=True)
     copied = refreshed = 0
     metadata: list[dict] = []
+    export_batch = export_dir.name
 
     for row in load_manifest(export_dir):
         resume_file = (row.get("resume_filename") or "").strip()
@@ -74,6 +75,8 @@ def copy_resumes(export_dir: Path, import_date: str) -> tuple[int, int, list[dic
             "source": "ZipRecruiter",
             "slug": slug,
             "resume_filename": dest_name,
+            "export_batch": export_batch,
+            "exported_at": (row.get("exported_at") or "").strip() or None,
         }
         metadata.append(meta)
 
@@ -152,9 +155,11 @@ def enrich_from_sidecars() -> int:
         if not match:
             continue
         patch = {}
-        for field in ("email", "phone", "market", "ziprecruiter_project_id"):
+        for field in ("email", "phone", "market", "ziprecruiter_project_id", "export_batch"):
             if data.get(field):
                 patch[field] = data[field]
+        if data.get("exported_at"):
+            patch["exported_at"] = data["exported_at"]
         if patch:
             sb.table("candidates").update(patch).eq("id", match["id"]).execute()
             updated += 1

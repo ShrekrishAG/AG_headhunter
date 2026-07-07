@@ -24,5 +24,6 @@ slack-zr-agent/.env
 slack-zr-agent/.venv/
 slack-zr-agent/browser-data/
 slack-zr-agent/exports/
+slack-zr-agent/.review-sessions/
 slack-zr-agent/**/__pycache__/
 slack-zr-agent/**/*.pyc

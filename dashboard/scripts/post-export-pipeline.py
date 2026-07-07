@@ -67,7 +67,12 @@ def main() -> int:
     parser.add_argument("--skip-drafts", action="store_true")
     args = parser.parse_args()
 
-    export_dir = args.export_dir.resolve()
+    export_dir = args.export_dir
+    if export_dir.is_absolute():
+        export_dir = export_dir.resolve()
+    else:
+        monorepo_path = (ROOT / "slack-zr-agent" / export_dir).resolve()
+        export_dir = monorepo_path if monorepo_path.is_dir() else export_dir.resolve()
     if not export_dir.is_dir():
         print(f"Export dir not found: {export_dir}", file=sys.stderr)
         return 1

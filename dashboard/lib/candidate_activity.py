@@ -323,6 +323,77 @@ def log_r1_evaluation_saved(
     )
 
 
+OUTREACH_LOG_TYPES = ("sms_sent", "email_sent", "sms_failed", "email_failed")
+
+
+def load_outreach_log(
+    sb: Client,
+    *,
+    role_id: str,
+    channel: str | None = None,
+    include_failed: bool = True,
+    limit: int = 500,
+) -> list[dict]:
+    """Load sent/failed outreach rows joined with candidate name and contact fields."""
+    if not tracking_available(sb):
+        return []
+
+    types = list(OUTREACH_LOG_TYPES if include_failed else ("sms_sent", "email_sent"))
+    if channel == "sms":
+        types = [t for t in types if t.startswith("sms")]
+    elif channel == "email":
+        types = [t for t in types if t.startswith("email")]
+
+    candidates = (
+        sb.table("candidates")
+        .select("id, full_name, email, phone, market, pipeline_stage")
+        .eq("role_id", role_id)
+        .execute()
+        .data
+    )
+    by_id = {row["id"]: row for row in candidates}
+    if not by_id:
+        return []
+
+    rows = (
+        sb.table("candidate_activities")
+        .select("*")
+        .in_("candidate_id", list(by_id.keys()))
+        .in_("activity_type", types)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+        .data
+    )
+
+    log: list[dict] = []
+    for activity in rows:
+        candidate = by_id.get(activity["candidate_id"])
+        if not candidate:
+            continue
+        payload = activity.get("payload") or {}
+        log.append(
+            {
+                "created_at": activity.get("created_at"),
+                "activity_type": activity.get("activity_type"),
+                "full_name": candidate.get("full_name"),
+                "email": candidate.get("email"),
+                "phone": candidate.get("phone"),
+                "market": candidate.get("market"),
+                "pipeline_stage": candidate.get("pipeline_stage"),
+                "to": payload.get("to"),
+                "subject": payload.get("subject"),
+                "body_preview": payload.get("body_preview"),
+                "external_id": payload.get("external_id"),
+                "outreach_number": payload.get("outreach_number"),
+                "bulk": payload.get("bulk"),
+                "error": payload.get("error"),
+                "candidate_id": activity.get("candidate_id"),
+            }
+        )
+    return log
+
+
 def load_activities_by_candidate(
     sb: Client,
     candidate_ids: list[str],

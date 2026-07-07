@@ -57,5 +57,5 @@ All ZipRecruiter resumes are scored using the **Project Sales Rep Resume Scoring
 |-------|----------------|
 | 85–100 | Strong interview — prioritize |
 | 70–84 | Good candidate — interview if aligned |
-| 55–69 | Phone screen first |
-| Below 55 | Likely not a fit |
+| 60–69 | Phone screen first |
+| Below 60 | Likely not a fit |
