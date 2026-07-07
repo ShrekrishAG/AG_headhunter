@@ -8,7 +8,12 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
-from lib.candidate_activity import load_outreach_log, tracking_available
+from lib.candidate_activity import (
+    format_outreach_attempt,
+    format_outreach_totals,
+    load_outreach_log,
+    tracking_available,
+)
 from lib.constants import (
     APP_NAME,
     PIPELINE_STAGES,
@@ -106,10 +111,17 @@ def _channel_label(activity_type: str) -> str:
 table_rows = []
 for row in rows:
     activity_type = row.get("activity_type") or ""
+    sms_total = int(row.get("sms_outreach_count") or 0)
+    email_total = int(row.get("email_outreach_count") or 0)
     table_rows.append(
         {
             "Sent at": _format_sent_at(row.get("created_at")),
             "Name": row.get("full_name") or "—",
+            "This attempt": format_outreach_attempt(
+                activity_type, row.get("outreach_number")
+            ),
+            "Times reached": format_outreach_totals(sms_total, email_total),
+            "Total touches": sms_total + email_total,
             "Phone": row.get("phone") or "—",
             "Email": row.get("email") or "—",
             "Channel": _channel_label(activity_type),
@@ -149,6 +161,7 @@ st.download_button(
 )
 
 st.caption(
-    "Each row is logged when Pipeline sends an invite (individual or bulk). "
-    "Per-candidate timelines are also on each Pipeline card under **Activity timeline**."
+    "Each row is one send. **This attempt** is that channel’s sequence number at send time "
+    "(e.g. SMS #2). **Times reached** is the candidate’s current SMS and email totals. "
+    "Per-candidate timelines are also on Pipeline cards under **Activity timeline**."
 )

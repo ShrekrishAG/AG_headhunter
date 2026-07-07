@@ -346,7 +346,10 @@ def load_outreach_log(
 
     candidates = (
         sb.table("candidates")
-        .select("id, full_name, email, phone, market, pipeline_stage")
+        .select(
+            "id, full_name, email, phone, market, pipeline_stage, "
+            "sms_outreach_count, email_outreach_count"
+        )
         .eq("role_id", role_id)
         .execute()
         .data
@@ -389,9 +392,30 @@ def load_outreach_log(
                 "bulk": payload.get("bulk"),
                 "error": payload.get("error"),
                 "candidate_id": activity.get("candidate_id"),
+                "sms_outreach_count": int(candidate.get("sms_outreach_count") or 0),
+                "email_outreach_count": int(candidate.get("email_outreach_count") or 0),
             }
         )
     return log
+
+
+def format_outreach_attempt(activity_type: str, outreach_number: int | None) -> str:
+    if outreach_number is None:
+        return "—"
+    if activity_type == "sms_sent":
+        return f"SMS #{outreach_number}"
+    if activity_type == "email_sent":
+        return f"Email #{outreach_number}"
+    return "—"
+
+
+def format_outreach_totals(sms_count: int, email_count: int) -> str:
+    parts: list[str] = []
+    if sms_count:
+        parts.append(f"SMS ×{sms_count}")
+    if email_count:
+        parts.append(f"Email ×{email_count}")
+    return " · ".join(parts) if parts else "—"
 
 
 def load_activities_by_candidate(
