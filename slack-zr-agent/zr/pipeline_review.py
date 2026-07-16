@@ -12,6 +12,7 @@ from zr.locked_pipeline import LockedCandidate, scrape_locked_candidates, unlock
 from zr.pipeline_prescreen import recommendation_emoji, score_candidates
 from zr.projects import Project, fetch_projects_on_page
 from zr.review_options import ReviewOptions
+from zr.role_config import resolve_role_slug
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +114,9 @@ async def _review_single_project(
     unlock_top_n = options.unlock_for_project(project)
 
     locked = await scrape_locked_candidates(page, project, limit=review_pool)
-    scored = await asyncio.to_thread(score_candidates, locked)
+    scored = await asyncio.to_thread(
+        score_candidates, locked, role_slug=options.role_slug
+    )
     ranked = sorted(
         scored,
         key=lambda candidate: (
@@ -167,6 +170,8 @@ async def run_pipeline_review(options: ReviewOptions) -> PipelineReviewResult:
                 raise ZipRecruiterSessionError(
                     f"Project `{project.name}` is missing a project id."
                 )
+            if not options.role_explicit:
+                options.role_slug = resolve_role_slug(project_query=project.name)
             slices.append(await _review_single_project(page, project, options))
 
         return PipelineReviewResult(slices=slices, options=options)
@@ -189,6 +194,10 @@ async def unlock_review_top(result: PipelineReviewResult) -> dict[str, list[Lock
 
 def format_review_for_slack(result: PipelineReviewResult) -> str:
     lines: list[str] = []
+
+    if result.options:
+        lines.append(f"*Role:* {result.options.role_title()}")
+        lines.append("")
 
     if result.is_multi_project:
         lines.append(

@@ -69,6 +69,8 @@ Click **Deploy**. First build takes ~2–3 minutes.
 | Dashboard | `https://accord-headhunter.streamlit.app/dashboard` |
 | Process | `https://accord-headhunter.streamlit.app/process` |
 | Communications | `https://accord-headhunter.streamlit.app/communications` |
+| Outreach log | `https://accord-headhunter.streamlit.app/outreach-log` |
+| Manager packets | `https://accord-headhunter.streamlit.app/manager-packets` |
 | R1 Scoring | `https://accord-headhunter.streamlit.app/r1-scoring` |
 
 Set `STREAMLIT_APP_URL` in `.env` and `slack-zr-agent/.env` to match.

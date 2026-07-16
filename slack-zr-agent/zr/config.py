@@ -50,6 +50,7 @@ EXPORT_BASE_DIR = bot_relative_path(os.getenv("EXPORT_BASE_DIR"), BASE_DIR / "ex
 
 ACCORD_HEADHUNTER_DIR = os.getenv("ACCORD_HEADHUNTER_DIR", "").strip()
 PIPELINE_REVIEW_POOL = int(os.getenv("PIPELINE_REVIEW_POOL", "25"))
+DEFAULT_ROLE_SLUG = os.getenv("DEFAULT_ROLE_SLUG", "sales-representative").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_PRESCREEN_MODEL = os.getenv("OPENAI_PRESCREEN_MODEL", "gpt-4o-mini")
 

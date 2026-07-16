@@ -84,6 +84,7 @@ def render_sidebar_nav(
     process_page,
     communications_page,
     outreach_log_page,
+    manager_packets_page,
     pipeline_page,
     r1_page,
 ) -> None:
@@ -94,6 +95,7 @@ def render_sidebar_nav(
     st.divider()
     st.page_link(pipeline_page, label="Pipeline", use_container_width=True)
     st.page_link(dashboard_page, label="Dashboard", use_container_width=True)
+    st.page_link(manager_packets_page, label="Manager packets", use_container_width=True)
     st.page_link(process_page, label="Process", use_container_width=True)
     if st.button("Job description", key="sidebar_job_description", use_container_width=True):
         request_job_description_dialog(role_slug)

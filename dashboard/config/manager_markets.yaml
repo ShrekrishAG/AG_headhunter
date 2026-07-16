@@ -1,0 +1,34 @@
+# Sales markets → ZipRecruiter projects → GM emails
+# Used by Streamlit Manager Packets (sales only).
+
+markets:
+  - project: "TGC - Wichita, KS"
+    market: "Wichita, KS"
+    managers:
+      - email: andreashieb@roofally.com
+      - email: joshuahull@roofally.com
+
+  - project: "TGC - madison WI"
+    market: "Madison, WI"
+    managers:
+      - email: jacobrhoades@roofally.com
+
+  - project: "TGC - Springfield MO"
+    market: "Springfield, MO"
+    managers:
+      - email: sethheeren@roofally.com
+
+  - project: "TGC - KC, MO"
+    market: "KC MO"
+    managers:
+      - email: jamespeterson@roofally.com
+      - email: mikehall@roofally.com
+      - email: markhoggard@roofally.com
+      - email: cainebirkenholz@roofally.com
+      - email: juliuswells@roofally.com
+      - email: mannysantos@roofally.com
+
+  - project: "TGC - St Louis"
+    market: "St Louis, MO"
+    managers:
+      - email: gregsanders@roofally.com

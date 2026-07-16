@@ -218,6 +218,12 @@ async def _run_unlock_for_session(
         if thread_ts:
             session.thread_ts = thread_ts
         update_session(session)
+        sync_dashboard = session.sync_dashboard()
+        export_prompt = (
+            "Export CSV + resumes and run the post-export pipeline?"
+            if sync_dashboard
+            else "Export CSV + resumes? (VP sourcing — no dashboard sync)"
+        )
         await client.chat_postMessage(
             channel=channel,
             thread_ts=thread_ts,
@@ -225,7 +231,7 @@ async def _run_unlock_for_session(
                 f"Unlocked *{unlocked_total}* candidate(s) "
                 f"({unlocked_total} credit(s) spent).\n"
                 + "\n".join(detail_lines)
-                + "\n\nExport and sync to Accord?"
+                + f"\n\n{export_prompt}"
             ),
             blocks=[
                 {
@@ -233,12 +239,13 @@ async def _run_unlock_for_session(
                     "text": {
                         "type": "mrkdwn",
                         "text": (
-                            f"Unlocked *{unlocked_total}* candidate(s). "
-                            "Export CSV + resumes and run the post-export pipeline?"
+                            f"Unlocked *{unlocked_total}* candidate(s). {export_prompt}"
                         ),
                     },
                 },
-                *export_after_unlock_blocks(session_id),
+                *export_after_unlock_blocks(
+                    session_id, sync_dashboard=sync_dashboard
+                ),
             ],
         )
     except ZipRecruiterSessionError as error:
@@ -306,7 +313,11 @@ async def _run_export_after_unlock(
         project_limits,
     )
     await _run_candidate_export(
-        client, target_channel, thread_ts=target_thread, options=options
+        client,
+        target_channel,
+        thread_ts=target_thread,
+        options=options,
+        sync_dashboard=session.sync_dashboard(),
     )
 
 
@@ -315,6 +326,8 @@ async def _run_candidate_export(
     channel: str,
     thread_ts: str | None = None,
     options: ExportOptions | None = None,
+    *,
+    sync_dashboard: bool = True,
 ) -> None:
     export_options = options or ExportOptions()
     await client.chat_postMessage(
@@ -361,17 +374,27 @@ async def _run_candidate_export(
                     ),
                 )
 
-        pipeline_summary = await asyncio.to_thread(
-            run_post_export_pipeline, result.export_dir
-        )
-        pipeline_message = format_pipeline_slack_message(
-            pipeline_summary, export_dir=result.export_dir
-        )
-        if pipeline_message:
+        if sync_dashboard:
+            pipeline_summary = await asyncio.to_thread(
+                run_post_export_pipeline, result.export_dir
+            )
+            pipeline_message = format_pipeline_slack_message(
+                pipeline_summary, export_dir=result.export_dir
+            )
+            if pipeline_message:
+                await client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=pipeline_message,
+                )
+        else:
             await client.chat_postMessage(
                 channel=channel,
                 thread_ts=thread_ts,
-                text=pipeline_message,
+                text=(
+                    "Export complete — CSV + resumes uploaded. "
+                    "Skipped dashboard sync (sourcing-only role)."
+                ),
             )
     except ZipRecruiterSessionError as error:
         await client.chat_postMessage(

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from zr.config import BASE_DIR
+from zr.role_config import default_role_slug, get_role
 from zr.locked_pipeline import LockedCandidate
 from zr.pipeline_review import PipelineReviewResult, ProjectReviewSlice
 from zr.projects import Project
@@ -24,7 +25,11 @@ class ReviewSession:
     session_id: str
     channel: str
     thread_ts: str | None
+    role_slug: str = field(default_factory=default_role_slug)
     slices: list[ProjectReviewSlice] = field(default_factory=list)
+
+    def sync_dashboard(self) -> bool:
+        return get_role(self.role_slug).sync_dashboard
 
     @property
     def total_unlock_count(self) -> int:
@@ -68,6 +73,7 @@ class ReviewSession:
             "session_id": self.session_id,
             "channel": self.channel,
             "thread_ts": self.thread_ts,
+            "role_slug": self.role_slug,
             "slices": [_slice_to_payload(slice_) for slice_ in self.slices],
         }
 
@@ -78,6 +84,7 @@ class ReviewSession:
             session_id=str(payload.get("session_id") or ""),
             channel=str(payload.get("channel") or ""),
             thread_ts=payload.get("thread_ts"),
+            role_slug=str(payload.get("role_slug") or default_role_slug()),
             slices=slices,
         )
 
@@ -169,6 +176,11 @@ def create_session(
         session_id=session_id,
         channel=channel,
         thread_ts=thread_ts,
+        role_slug=(
+            result.options.role_slug
+            if result.options is not None
+            else default_role_slug()
+        ),
         slices=list(result.slices),
     )
     _sessions[session_id] = session

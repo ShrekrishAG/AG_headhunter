@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass, field
 
 from zr.projects import Project
+from zr.role_config import default_role_slug, get_role, parse_role_from_text, resolve_role_slug, strip_role_tokens
 
 TOP_N_RE = re.compile(
     r"(?:unlock|review|qualify|score)\s+(?:top\s+)?(\d+)",
@@ -30,6 +31,11 @@ class ReviewOptions:
     default_review_pool: int | None = None
     project_unlock_limits: dict[str, int] = field(default_factory=dict)
     project_review_pools: dict[str, int] = field(default_factory=dict)
+    role_slug: str = field(default_factory=default_role_slug)
+    role_explicit: bool = False
+
+    def role_title(self) -> str:
+        return get_role(self.role_slug).title
 
     @property
     def is_multi_project(self) -> bool:
@@ -131,6 +137,7 @@ class ReviewOptions:
                 )
 
         parts = [
+            f"Role: *{self.role_title()}*",
             f"Review pool: *{self.review_pool}* locked candidates",
             f"Unlock top: *{self.unlock_top_n}*",
         ]
@@ -150,6 +157,11 @@ def parse_review_options(text: str) -> ReviewOptions:
         text.strip(),
         flags=re.I,
     )
+
+    role = parse_role_from_text(cleaned)
+    if role:
+        options.role_explicit = True
+    cleaned = strip_role_tokens(cleaned)
 
     for match in PROJECT_LIMIT_RE.finditer(cleaned):
         project_name = match.group(1).strip().lower()
@@ -182,11 +194,23 @@ def parse_review_options(text: str) -> ReviewOptions:
     if project_match:
         options.project_query = project_match.group(1).strip().strip('"').strip("'")
 
+    options.role_slug = resolve_role_slug(
+        explicit_role=role,
+        project_query=options.project_query,
+    )
+
     return options
 
 
 def parse_slack_review_modal_values(values: dict) -> ReviewOptions:
     options = ReviewOptions()
+
+    role_block = values.get("role_block", {})
+    role_select = role_block.get("role_slug", {})
+    role_value = (role_select.get("selected_option") or {}).get("value")
+    if role_value:
+        options.role_slug = role_value
+        options.role_explicit = True
 
     unlock_block = values.get("default_unlock_block", {})
     unlock_input = unlock_block.get("default_unlock", {})
