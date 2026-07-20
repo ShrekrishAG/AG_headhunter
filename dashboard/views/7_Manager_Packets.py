@@ -138,7 +138,7 @@ else:
 
         st.caption(
             "Live sends BCC a copy to recruiting "
-            f"(`{get_config('MANAGER_PACKET_COPY_EMAIL') or 'shreya@dollfamilyoffice.com'}`). "
+            f"(`{get_config('MANAGER_PACKET_COPY_EMAIL') or 'shreya@dollfamilyoffice.com,randonkent@roofally.com'}`). "
             "Email body lists name, email, and phone for each candidate."
         )
 

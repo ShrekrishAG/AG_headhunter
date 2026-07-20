@@ -360,10 +360,35 @@ def _manager_email_body(
     )
 
 
+def packet_copy_emails() -> list[str]:
+    """BCC list for recruiting on live GM packets (comma-separated config)."""
+    raw_value = get_config("MANAGER_PACKET_COPY_EMAIL")
+    # Streamlit secrets sometimes return a list for comma-like values.
+    if isinstance(raw_value, (list, tuple)):
+        parts = [str(part) for part in raw_value]
+    else:
+        raw = (
+            str(raw_value).strip()
+            if raw_value
+            else "shreya@dollfamilyoffice.com,randonkent@roofally.com"
+        )
+        parts = raw.replace(";", ",").split(",")
+
+    emails: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        email = normalize_email(part)
+        if not email or email.lower() in seen:
+            continue
+        seen.add(email.lower())
+        emails.append(email)
+    return emails
+
+
 def packet_copy_email() -> str | None:
-    """Optional BCC for recruiting when sending live GM packets."""
-    raw = (get_config("MANAGER_PACKET_COPY_EMAIL") or "shreya@dollfamilyoffice.com").strip()
-    return normalize_email(raw) or None
+    """Backward-compatible single copy address (first configured BCC)."""
+    emails = packet_copy_emails()
+    return emails[0] if emails else None
 
 
 def send_packet_email(
@@ -409,10 +434,13 @@ def send_packet_email(
         ),
     )
 
-    # Live GM sends: BCC recruiting so you get a full copy of each packet.
-    copy_to = packet_copy_email()
-    if copy_to and not test_mode and copy_to.lower() != to_email.lower():
-        message.add_bcc(Bcc(copy_to))
+    # Live GM sends: BCC recruiting so they get a full copy of each packet.
+    if not test_mode:
+        to_lower = to_email.lower()
+        for copy_to in packet_copy_emails():
+            if copy_to.lower() == to_lower:
+                continue
+            message.add_bcc(Bcc(copy_to))
 
     encoded = base64.b64encode(zip_bytes).decode()
     attachment = Attachment(
