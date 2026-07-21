@@ -360,6 +360,12 @@ def _manager_email_body(
     )
 
 
+REQUIRED_PACKET_COPY_EMAILS = (
+    "shreya@dollfamilyoffice.com",
+    "randonkent@roofally.com",
+)
+
+
 def packet_copy_emails() -> list[str]:
     """BCC list for recruiting on live GM packets (comma-separated config)."""
     raw_value = get_config("MANAGER_PACKET_COPY_EMAIL")
@@ -382,6 +388,14 @@ def packet_copy_emails() -> list[str]:
             continue
         seen.add(email.lower())
         emails.append(email)
+
+    # Always include required recruiting copies even if config is stale/partial.
+    for required in REQUIRED_PACKET_COPY_EMAILS:
+        email = normalize_email(required)
+        if not email or email.lower() in seen:
+            continue
+        seen.add(email.lower())
+        emails.append(email)
     return emails
 
 
@@ -389,6 +403,94 @@ def packet_copy_email() -> str | None:
     """Backward-compatible single copy address (first configured BCC)."""
     emails = packet_copy_emails()
     return emails[0] if emails else None
+
+
+@dataclass
+class PacketEmailPreview:
+    to_email: str
+    bcc_emails: list[str]
+    subject: str
+    body: str
+    test_mode: bool
+    attachment_name: str
+    missing_required_bcc: list[str]
+
+
+def preview_packet_email(
+    packet: ManagerPacket,
+    *,
+    redirect_to: str | None = None,
+) -> PacketEmailPreview:
+    """Build the exact To/BCC/subject/body that send_packet_email will use."""
+    test_mode = bool(redirect_to)
+    to_email = normalize_email(redirect_to or packet.manager_email) or (
+        redirect_to or packet.manager_email
+    )
+    to_lower = to_email.lower()
+    bcc_emails = []
+    if not test_mode:
+        for copy_to in packet_copy_emails():
+            if copy_to.lower() == to_lower:
+                continue
+            bcc_emails.append(copy_to)
+
+    required = [normalize_email(e) or e.lower() for e in REQUIRED_PACKET_COPY_EMAILS]
+    present = {e.lower() for e in bcc_emails}
+    # In test mode BCC is intentionally off — flag required as missing for live check.
+    if test_mode:
+        missing = list(REQUIRED_PACKET_COPY_EMAILS)
+    else:
+        missing = [email for email in required if email not in present]
+
+    return PacketEmailPreview(
+        to_email=to_email,
+        bcc_emails=bcc_emails,
+        subject=_manager_email_subject(packet, test_mode=test_mode),
+        body=_manager_email_body(
+            packet, test_mode=test_mode, intended_manager=packet.manager_email
+        ),
+        test_mode=test_mode,
+        attachment_name=f"{packet.packet_id}.zip",
+        missing_required_bcc=missing,
+    )
+
+
+def verify_copy_recipients_for_packets(
+    packets: list[ManagerPacket],
+    *,
+    redirect_to: str | None = None,
+) -> dict[str, Any]:
+    """Confirm required recruiting BCC addresses are on every live packet email."""
+    previews = [
+        preview_packet_email(packet, redirect_to=redirect_to) for packet in packets
+    ]
+    required = [normalize_email(e) or e.lower() for e in REQUIRED_PACKET_COPY_EMAILS]
+    configured = packet_copy_emails()
+    configured_set = {e.lower() for e in configured}
+    missing_from_config = [e for e in required if e not in configured_set]
+
+    packets_missing: list[dict[str, Any]] = []
+    if not redirect_to:
+        for packet, preview in zip(packets, previews):
+            if preview.missing_required_bcc:
+                packets_missing.append(
+                    {
+                        "manager": packet.manager_email,
+                        "market": packet.market,
+                        "missing": preview.missing_required_bcc,
+                    }
+                )
+
+    all_ok = not missing_from_config and not packets_missing and not redirect_to
+    return {
+        "configured_bcc": configured,
+        "required_bcc": list(REQUIRED_PACKET_COPY_EMAILS),
+        "missing_from_config": missing_from_config,
+        "packets_missing": packets_missing,
+        "test_mode": bool(redirect_to),
+        "all_ok": all_ok,
+        "previews": previews,
+    }
 
 
 def send_packet_email(
@@ -412,6 +514,7 @@ def send_packet_email(
     test_mode = bool(redirect_to)
 
     import base64
+    import logging
 
     import sendgrid
     from sendgrid.helpers.mail import (
@@ -423,24 +526,41 @@ def send_packet_email(
         FileName,
         FileType,
         Mail,
+        Personalization,
+        To,
     )
 
+    subject = _manager_email_subject(packet, test_mode=test_mode)
+    body = _manager_email_body(
+        packet, test_mode=test_mode, intended_manager=intended
+    )
     message = Mail(
         from_email=Email(from_email, from_name),
-        to_emails=to_email,
-        subject=_manager_email_subject(packet, test_mode=test_mode),
-        plain_text_content=_manager_email_body(
-            packet, test_mode=test_mode, intended_manager=intended
-        ),
+        subject=subject,
+        plain_text_content=body,
     )
 
+    personalization = Personalization()
+    personalization.add_to(To(to_email))
+
     # Live GM sends: BCC recruiting so they get a full copy of each packet.
+    bcc_emails: list[str] = []
     if not test_mode:
         to_lower = to_email.lower()
         for copy_to in packet_copy_emails():
             if copy_to.lower() == to_lower:
                 continue
-            message.add_bcc(Bcc(copy_to))
+            personalization.add_bcc(Bcc(copy_to))
+            bcc_emails.append(copy_to)
+
+    message.add_personalization(personalization)
+    logging.getLogger(__name__).info(
+        "Sending manager packet to=%s bcc=%s market=%s batch=%s",
+        to_email,
+        bcc_emails,
+        packet.market,
+        packet.export_batch,
+    )
 
     encoded = base64.b64encode(zip_bytes).decode()
     attachment = Attachment(

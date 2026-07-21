@@ -8,17 +8,19 @@ import pandas as pd
 import streamlit as st
 
 from lib.communications_status import outbound_sends_enabled
-from lib.app_config import get_config
 from lib.constants import APP_NAME, DASHBOARD_ROOT, get_selected_role_title
 from lib.manager_markets import load_market_managers
 from lib.manager_packets import (
     AssignmentPreview,
     EXPORTS_ROOT,
+    REQUIRED_PACKET_COPY_EMAILS,
     build_assignment_preview,
     list_export_batches,
     load_recent_sends,
+    preview_packet_email,
     send_all_packets,
     tracking_available,
+    verify_copy_recipients_for_packets,
 )
 from lib.r1_email_invite import sendgrid_configured
 from lib.supabase_client import get_supabase
@@ -136,10 +138,80 @@ else:
                 )
                 st.dataframe(detail, use_container_width=True, hide_index=True)
 
-        st.caption(
-            "Live sends BCC a copy to recruiting "
-            f"(`{get_config('MANAGER_PACKET_COPY_EMAIL') or 'shreya@dollfamilyoffice.com,randonkent@roofally.com'}`). "
-            "Email body lists name, email, and phone for each candidate."
+        st.subheader("Send")
+        test_mode = st.checkbox(
+            "Test mode — send all packets to my email (do not mark as sent)",
+            value=False,
+        )
+        test_email = st.text_input(
+            "Test recipient email",
+            value="shreya@dollfamilyoffice.com",
+            disabled=not test_mode,
+        )
+        redirect = (test_email or "").strip() if test_mode else None
+
+        recipient_check = verify_copy_recipients_for_packets(
+            preview.packets, redirect_to=redirect
+        )
+        configured_bcc = recipient_check["configured_bcc"]
+        st.markdown("**Recruiting copy (BCC on live sends)**")
+        for required in REQUIRED_PACKET_COPY_EMAILS:
+            if required.lower() in {e.lower() for e in configured_bcc}:
+                st.success(f"Included: `{required}`")
+            else:
+                st.error(f"Missing from config: `{required}`")
+        if recipient_check["test_mode"]:
+            st.warning(
+                "Test mode: BCC is disabled. Packets go only to the test recipient above."
+            )
+        elif recipient_check["all_ok"]:
+            st.success(
+                f"Verified: both recruiting addresses are BCC’d on all "
+                f"{len(preview.packets)} live packet email(s)."
+            )
+        elif recipient_check["packets_missing"]:
+            st.error(
+                "Some packets would omit a required BCC "
+                "(usually because that address is already the To/manager)."
+            )
+            for row in recipient_check["packets_missing"]:
+                st.write(
+                    f"• {row['market']} → `{row['manager']}` missing "
+                    f"{', '.join(row['missing'])}"
+                )
+
+        st.subheader("Email preview")
+        packet_labels = [
+            f"{p.market} → {p.manager_email} ({len(p.candidates)})"
+            for p in preview.packets
+        ]
+        chosen_label = st.selectbox(
+            "Preview which packet email",
+            options=packet_labels,
+            key=f"manager_packet_email_preview_{preview.export_batch}",
+        )
+        chosen = next(
+            p
+            for p, label in zip(preview.packets, packet_labels)
+            if label == chosen_label
+        )
+        email_preview = preview_packet_email(chosen, redirect_to=redirect)
+
+        st.markdown(f"**To:** `{email_preview.to_email}`")
+        if email_preview.bcc_emails:
+            st.markdown(
+                "**BCC (hidden from GM, both must receive a copy):** "
+                + ", ".join(f"`{e}`" for e in email_preview.bcc_emails)
+            )
+        else:
+            st.markdown("**BCC:** _(none — test mode)_")
+        st.markdown(f"**Attachment:** `{email_preview.attachment_name}`")
+        st.markdown(f"**Subject:** {email_preview.subject}")
+        st.text_area(
+            "Body",
+            value=email_preview.body,
+            height=320,
+            key=f"manager_packet_email_body_{preview.export_batch}_{chosen_label}",
         )
 
         ready = outbound_sends_enabled() and sendgrid_configured() and tracking_available(sb)
@@ -151,22 +223,19 @@ else:
         elif not tracking_available(sb):
             st.warning("Apply the manager packet send-log migration before real sends.")
 
-        st.subheader("Send")
-        test_mode = st.checkbox(
-            "Test mode — send all packets to my email (do not mark as sent)",
-            value=False,
+        live_blocked = (not test_mode) and (
+            bool(recipient_check["missing_from_config"])
+            or bool(recipient_check["packets_missing"])
         )
-        test_email = st.text_input(
-            "Test recipient email",
-            value="shreya@dollfamilyoffice.com",
-            disabled=not test_mode,
-        )
-
         send_label = "Send test packets to me" if test_mode else "Send to managers"
-        send_disabled = (not test_ready) if test_mode else (not ready)
+        send_disabled = ((not test_ready) if test_mode else (not ready)) or live_blocked
+        if live_blocked:
+            st.error(
+                "Live send is blocked until both recruiting BCC addresses are configured "
+                f"({', '.join(REQUIRED_PACKET_COPY_EMAILS)})."
+            )
 
         if st.button(send_label, type="primary", disabled=send_disabled):
-            redirect = (test_email or "").strip() if test_mode else None
             if test_mode and not redirect:
                 st.error("Enter a test recipient email.")
             else:
