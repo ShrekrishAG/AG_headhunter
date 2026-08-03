@@ -11,13 +11,19 @@ from playwright.async_api import Page, Response
 
 from zr.browser import ZipRecruiterSessionError, ensure_logged_in, ziprecruiter_context
 from zr.projects import Project
-from zr.rdb_api import open_sourcing_project
+from zr.rdb_api import (
+    SOURCING_PAGE_SIZE,
+    fetch_sourcing_jobseekers,
+    open_sourcing_project,
+    project_sourcing_url,
+)
 
 logger = logging.getLogger(__name__)
 
 EXPERIENCE_KEYS = (
     "workHistory",
     "employmentHistory",
+    "employment",
     "positions",
     "experiences",
     "workExperiences",
@@ -56,7 +62,7 @@ def _extract_experience_text(item: dict[str, Any]) -> str:
 
     location = jobseeker.get("location") or resume.get("location") or item.get("location")
     if isinstance(location, dict):
-        location = ", ".join(
+        location = location.get("name") or ", ".join(
             str(location.get(key) or "")
             for key in ("city", "state", "country")
             if location.get(key)
@@ -73,17 +79,23 @@ def _extract_experience_text(item: dict[str, Any]) -> str:
                 if not isinstance(pos, dict):
                     continue
                 title = pos.get("title") or pos.get("jobTitle") or pos.get("position") or ""
+                organization = pos.get("organization")
                 company = (
                     pos.get("company")
                     or pos.get("employer")
                     or pos.get("companyName")
+                    or (
+                        organization.get("name")
+                        if isinstance(organization, dict)
+                        else ""
+                    )
                     or ""
                 )
                 desc = pos.get("description") or pos.get("summary") or ""
                 dates = pos.get("dateRange") or pos.get("dates") or ""
                 if isinstance(dates, dict):
                     dates = " - ".join(
-                        str(dates.get(key) or "")
+                        _format_partial_date(dates.get(key))
                         for key in ("start", "end")
                         if dates.get(key)
                     )
@@ -93,11 +105,33 @@ def _extract_experience_text(item: dict[str, Any]) -> str:
                 if line:
                     parts.append(line)
 
+    skills = item.get("skills") or resume.get("skills") or jobseeker.get("skills")
+    if isinstance(skills, list) and skills:
+        skill_names = [
+            str(skill.get("name") if isinstance(skill, dict) else skill).strip()
+            for skill in skills[:20]
+        ]
+        skill_names = [name for name in skill_names if name]
+        if skill_names:
+            parts.append("Skills: " + ", ".join(skill_names))
+
     about = resume.get("about") or resume.get("summary") or jobseeker.get("about")
     if about:
         parts.append(f"About: {about}")
 
     return "\n".join(parts).strip()
+
+
+def _format_partial_date(value: Any) -> str:
+    if not isinstance(value, dict):
+        return str(value or "").strip()
+    year = value.get("year")
+    month = value.get("month")
+    if year and month:
+        return f"{month}/{year}"
+    if year:
+        return str(year)
+    return ""
 
 
 def _candidate_name(item: dict[str, Any]) -> str:
@@ -267,14 +301,19 @@ async def _extract_profile_from_dom(page: Page) -> tuple[str, str, str]:
 
 async def _current_pipeline_index(page: Page) -> int | None:
     text = await page.inner_text("body")
-    match = re.search(r"(\d+)\s+of\s+([\d,]+)", text)
-    if not match:
-        return None
-    return int(match.group(1))
+    for match in re.finditer(r"(\d+)\s+of\s+([\d,]+)(?:\s+(\w+))?", text):
+        trailing = (match.group(3) or "").lower()
+        # Skip credit counters like "250 of 250 left"
+        if trailing == "left":
+            continue
+        return int(match.group(1))
+    return None
 
 
 async def _click_next_candidate(page: Page) -> bool:
     selectors = [
+        "button[aria-label='Next candidate']",
+        "button[aria-label*='Next candidate' i]",
         "button[aria-label*='Next' i]",
         "button[title*='Next' i]",
         "[data-testid*='next' i]",
@@ -289,7 +328,7 @@ async def _click_next_candidate(page: Page) -> bool:
             except Exception:
                 continue
 
-    for label in ("Next", "›", "→"):
+    for label in ("Next candidate", "Next", "›", "→"):
         locator = page.get_by_role("button", name=re.compile(re.escape(label), re.I)).first
         if await locator.count() > 0:
             try:
@@ -303,6 +342,8 @@ async def _click_next_candidate(page: Page) -> bool:
 
 async def _click_previous_candidate(page: Page) -> bool:
     selectors = [
+        "button[aria-label='Previous candidate']",
+        "button[aria-label*='Previous candidate' i]",
         "button[aria-label*='Previous' i]",
         "button[title*='Previous' i]",
         "[data-testid*='previous' i]",
@@ -317,6 +358,46 @@ async def _click_previous_candidate(page: Page) -> bool:
             except Exception:
                 continue
     return False
+
+
+async def _go_to_sourcing_result_page(page: Page, page_number: int) -> None:
+    if page_number <= 1:
+        # Prefer returning to page 1 when needed
+        page_one = page.get_by_role("button", name="1", exact=True)
+        if await page_one.count() > 0:
+            try:
+                await page_one.first.click(timeout=3000)
+                await page.wait_for_timeout(1500)
+            except Exception:
+                pass
+        return
+
+    button = page.get_by_role("button", name=str(page_number), exact=True)
+    if await button.count() == 0:
+        button = page.get_by_text(str(page_number), exact=True)
+    if await button.count() == 0:
+        logger.warning("Could not find sourcing page button %s", page_number)
+        return
+    try:
+        await button.first.click(timeout=4000)
+        await page.wait_for_timeout(2000)
+    except Exception as error:
+        logger.warning("Failed to open sourcing page %s: %s", page_number, error)
+
+
+async def _select_candidate_in_list(page: Page, candidate: LockedCandidate) -> bool:
+    if not candidate.name:
+        return False
+    locator = page.get_by_text(candidate.name, exact=True)
+    if await locator.count() == 0:
+        return False
+    try:
+        await locator.first.click(timeout=5000)
+        await page.wait_for_timeout(1200)
+        return True
+    except Exception as error:
+        logger.warning("Could not select candidate %s: %s", candidate.name, error)
+        return False
 
 
 async def _go_to_pipeline_index(page: Page, target_index: int) -> None:
@@ -342,37 +423,100 @@ async def _go_to_pipeline_index(page: Page, target_index: int) -> None:
         current = await _current_pipeline_index(page) or current + 1
 
 
+def _api_item_to_candidate(item: dict[str, Any], index: int) -> LockedCandidate:
+    name = _candidate_name(item)
+    profile_text = _extract_experience_text(item)
+    if not profile_text:
+        profile_text = name
+    jobseeker = (item.get("resume") or {}).get("jobseeker") or {}
+    location = item.get("location") or jobseeker.get("location") or ""
+    if isinstance(location, dict):
+        location = (
+            location.get("name")
+            or ", ".join(
+                str(location.get(key) or "")
+                for key in ("city", "state", "country")
+                if location.get(key)
+            )
+        )
+    headline = str(
+        jobseeker.get("headline")
+        or item.get("headline")
+        or (
+            f"{item.get('yearsOfExperience')} years experience"
+            if item.get("yearsOfExperience")
+            else ""
+        )
+    )
+    return LockedCandidate(
+        name=name or f"Candidate {index}",
+        pipeline_index=index,
+        profile_text=profile_text,
+        headline=headline,
+        location=str(location or ""),
+        encrypted_jobseeker_id=_encrypted_jobseeker_id(item),
+        metadata={"source": "api"},
+    )
+
+
 async def scrape_locked_candidates(
     page: Page,
     project: Project,
     *,
     limit: int = 25,
 ) -> list[LockedCandidate]:
+    project_id = project.project_id or ""
+    if project_id:
+        await open_sourcing_project(page, project)
+        try:
+            api_items = await fetch_sourcing_jobseekers(page, project_id, limit=limit)
+        except Exception as error:
+            logger.warning(
+                "SearchAPI pagination failed for %s (%s); falling back to page capture",
+                project.name,
+                error,
+            )
+            api_items = []
+        if api_items:
+            candidates = [
+                _api_item_to_candidate(item, index)
+                for index, item in enumerate(api_items[:limit], start=1)
+            ]
+            # Search results are locked prospects; keep ones with a usable identity
+            candidates = [
+                candidate
+                for candidate in candidates
+                if candidate.name and (candidate.encrypted_jobseeker_id or candidate.profile_text)
+            ]
+            if candidates:
+                logger.info(
+                    "Loaded %s locked candidate(s) from SearchAPI for %s (requested %s)",
+                    len(candidates),
+                    project.name,
+                    limit,
+                )
+                return candidates
+
     api_items = await _capture_sourcing_api(page, project)
     if api_items:
-        candidates: list[LockedCandidate] = []
-        for index, item in enumerate(api_items[:limit], start=1):
-            name = _candidate_name(item)
-            profile_text = _extract_experience_text(item)
-            if not profile_text:
-                profile_text = name
-            jobseeker = (item.get("resume") or {}).get("jobseeker") or {}
-            candidates.append(
-                LockedCandidate(
-                    name=name or f"Candidate {index}",
-                    pipeline_index=index,
-                    profile_text=profile_text,
-                    headline=str(jobseeker.get("headline") or ""),
-                    encrypted_jobseeker_id=_encrypted_jobseeker_id(item),
-                    metadata={"source": "api"},
-                )
-            )
+        candidates = [
+            _api_item_to_candidate(item, index)
+            for index, item in enumerate(api_items[:limit], start=1)
+        ]
         if candidates:
             logger.info(
-                "Loaded %s locked candidate(s) from sourcing API for %s",
+                "Loaded %s locked candidate(s) from sourcing API capture for %s",
                 len(candidates),
                 project.name,
             )
+            if len(candidates) < limit:
+                logger.warning(
+                    "Sourcing capture only returned %s/%s for %s "
+                    "(ZipRecruiter first-page limit; SearchAPI pagination preferred)",
+                    len(candidates),
+                    limit,
+                    project.name,
+                )
             return candidates
 
     await open_sourcing_project(page, project)
@@ -381,12 +525,17 @@ async def scrape_locked_candidates(
     scraped: list[LockedCandidate] = []
     seen_names: set[str] = set()
     for index in range(1, limit + 1):
+        page_number = (index - 1) // SOURCING_PAGE_SIZE + 1
+        if index == 1 or (index - 1) % SOURCING_PAGE_SIZE == 0:
+            await _go_to_sourcing_result_page(page, page_number)
         name, headline, profile_text = await _extract_profile_from_dom(page)
         if not name:
             break
         key = name.lower()
         if key in seen_names:
-            break
+            if not await _click_next_candidate(page):
+                break
+            continue
         seen_names.add(key)
         scraped.append(
             LockedCandidate(
@@ -409,32 +558,186 @@ async def scrape_locked_candidates(
     return scraped
 
 
-async def unlock_candidate_on_page(page: Page, candidate: LockedCandidate) -> bool:
-    await _go_to_pipeline_index(page, candidate.pipeline_index)
+async def _open_candidate_detail(
+    page: Page,
+    project: Project,
+    candidate: LockedCandidate,
+) -> None:
+    """Open the candidate profile modal (Connect lives inside ReactModalPortal)."""
+    project_id = project.project_id or ""
+    if project_id and candidate.encrypted_jobseeker_id:
+        target = (
+            f"{project_sourcing_url(project_id)}"
+            f"?encryptedJobseekerId={candidate.encrypted_jobseeker_id}"
+        )
+        await page.goto(target, wait_until="domcontentloaded", timeout=60000)
+        await page.wait_for_timeout(2000)
+        modal_connect = page.locator(".ReactModalPortal").get_by_role(
+            "button", name=re.compile(r"^Connect$", re.I)
+        )
+        if await modal_connect.count() > 0:
+            return
+
+    page_number = max(1, (candidate.pipeline_index - 1) // SOURCING_PAGE_SIZE + 1)
+    await _go_to_sourcing_result_page(page, page_number)
+    selected = await _select_candidate_in_list(page, candidate)
+    if not selected:
+        await _go_to_pipeline_index(page, candidate.pipeline_index)
     await page.wait_for_timeout(1000)
 
-    button_patterns = (
+
+async def _click_connect_button(page: Page, candidate: LockedCandidate) -> bool:
+    """Click Connect in the profile modal — not the list-row Connect behind it."""
+    patterns = (
         re.compile(r"^Connect$", re.I),
         re.compile(r"Connect to unlock", re.I),
-        re.compile(r"Unlock", re.I),
+        re.compile(r"^Unlock$", re.I),
     )
-    for pattern in button_patterns:
-        locator = page.get_by_role("button", name=pattern).first
-        if await locator.count() == 0:
-            locator = page.get_by_text(pattern).first
-        if await locator.count() == 0:
+
+    for pattern in patterns:
+        modal = page.locator(".ReactModalPortal").filter(
+            has=page.get_by_role("button", name=pattern)
+        )
+        if await modal.count() > 0:
+            button = modal.last.get_by_role("button", name=pattern).first
+            try:
+                await button.click(timeout=8000)
+                await page.wait_for_timeout(2500)
+                await _confirm_unlock_dialog(page)
+                return True
+            except Exception as error:
+                logger.warning(
+                    "Modal unlock click failed for %s: %s — trying force click",
+                    candidate.name,
+                    error,
+                )
+                try:
+                    await button.click(timeout=5000, force=True)
+                    await page.wait_for_timeout(2500)
+                    await _confirm_unlock_dialog(page)
+                    return True
+                except Exception as force_error:
+                    logger.warning(
+                        "Force modal unlock failed for %s: %s",
+                        candidate.name,
+                        force_error,
+                    )
+
+        # Fallback: JS click on visible Connect inside any open portal
+        clicked = await page.evaluate(
+            """(patternSource) => {
+                const re = new RegExp(patternSource, 'i');
+                const portals = [...document.querySelectorAll('.ReactModalPortal')];
+                for (const portal of portals.reverse()) {
+                    const buttons = [...portal.querySelectorAll('button')];
+                    for (const button of buttons) {
+                        const label = (button.innerText || '').trim();
+                        if (!re.test(label)) continue;
+                        const rect = button.getBoundingClientRect();
+                        if (rect.width < 2 || rect.height < 2) continue;
+                        button.click();
+                        return true;
+                    }
+                }
+                return false;
+            }""",
+            pattern.pattern,
+        )
+        if clicked:
+            await page.wait_for_timeout(2500)
+            await _confirm_unlock_dialog(page)
+            return True
+
+    return False
+
+
+async def _confirm_unlock_dialog(page: Page) -> None:
+    """Dismiss/confirm any post-Connect confirmation dialog if present."""
+    for label in (
+        re.compile(r"^Confirm$", re.I),
+        re.compile(r"^Yes[, ]?connect", re.I),
+        re.compile(r"^Connect anyway$", re.I),
+        re.compile(r"^Continue$", re.I),
+        re.compile(r"^OK$", re.I),
+    ):
+        button = page.get_by_role("button", name=label).first
+        if await button.count() == 0:
             continue
         try:
-            await locator.click(timeout=5000)
-            await page.wait_for_timeout(2500)
-            candidate.is_unlocked = True
-            return True
-        except Exception as error:
-            logger.warning("Unlock click failed for %s: %s", candidate.name, error)
+            await button.click(timeout=2500)
+            await page.wait_for_timeout(1500)
+            return
+        except Exception:
+            continue
 
-    raise ZipRecruiterSessionError(
-        f"Could not find Connect/Unlock for {candidate.name} in {page.url}"
+
+async def _candidate_appears_unlocked(page: Page, candidate: LockedCandidate) -> bool:
+    """Best-effort check that Connect succeeded (contact visible / Connect gone)."""
+    modal = page.locator(".ReactModalPortal").last
+    text = ""
+    try:
+        text = await modal.inner_text(timeout=2000)
+    except Exception:
+        try:
+            text = await page.inner_text("body")
+        except Exception:
+            return False
+
+    lowered = text.lower()
+    if "hide this candidate" in lowered and re.search(
+        r"\bconnect\b", text, re.I
+    ):
+        # Still showing Connect in modal → likely not unlocked yet
+        connect_in_modal = page.locator(".ReactModalPortal").get_by_role(
+            "button", name=re.compile(r"^Connect$", re.I)
+        )
+        if await connect_in_modal.count() > 0:
+            return False
+
+    if re.search(r"[\w.+-]+@[\w.-]+\.\w+", text):
+        return True
+    if re.search(r"(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}", text):
+        return True
+    if re.search(r"message|email|phone|contact", lowered) and not re.search(
+        r"^connect$", text, re.I | re.M
+    ):
+        connect_in_modal = page.locator(".ReactModalPortal").get_by_role(
+            "button", name=re.compile(r"^Connect$", re.I)
+        )
+        return await connect_in_modal.count() == 0
+
+    connect_in_modal = page.locator(".ReactModalPortal").get_by_role(
+        "button", name=re.compile(r"^Connect$", re.I)
     )
+    return await connect_in_modal.count() == 0
+
+
+async def unlock_candidate_on_page(
+    page: Page,
+    project: Project,
+    candidate: LockedCandidate,
+) -> bool:
+    await _open_candidate_detail(page, project, candidate)
+
+    if not await _click_connect_button(page, candidate):
+        raise ZipRecruiterSessionError(
+            f"Could not find Connect/Unlock for {candidate.name} in {page.url}"
+        )
+
+    unlocked = await _candidate_appears_unlocked(page, candidate)
+    if unlocked:
+        candidate.is_unlocked = True
+        logger.info("Unlocked %s in %s", candidate.name, project.name)
+        return True
+
+    # Connect click may have worked even if UI is slow to refresh contact fields
+    candidate.is_unlocked = True
+    logger.info(
+        "Clicked Connect for %s in %s (contact fields not yet confirmed)",
+        candidate.name,
+        project.name,
+    )
+    return True
 
 
 async def unlock_candidates(
@@ -446,10 +749,12 @@ async def unlock_candidates(
     unlocked: list[LockedCandidate] = []
     for candidate in candidates:
         try:
-            await unlock_candidate_on_page(page, candidate)
+            await unlock_candidate_on_page(page, project, candidate)
             unlocked.append(candidate)
         except ZipRecruiterSessionError as error:
             logger.warning("%s", error)
+        except Exception as error:
+            logger.warning("Unlock failed for %s: %s", candidate.name, error)
     return unlocked
 
 

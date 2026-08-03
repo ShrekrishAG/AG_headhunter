@@ -1,0 +1,6 @@
+full_name,email,phone,source,date_imported,linkedin_url,linkedin_text,market,current_title,current_company,resume_filename,notes
+Test Alpha Candidate,shreya+pipeline-test-1@dollfamilyoffice.com,+14085150245,Manual import,2026-08-03,,,Springfield MO,Sales Manager,Dummy Co,,Dummy import for Pipeline batch filter / outreach test
+Test Bravo Candidate,shreya+pipeline-test-2@dollfamilyoffice.com,+14085150245,Manual import,2026-08-03,,,Springfield MO,Sales Manager,Dummy Co,,Dummy import for Pipeline batch filter / outreach test
+Test Charlie Candidate,shreya+pipeline-test-3@dollfamilyoffice.com,+14085150245,Manual import,2026-08-03,,,Springfield MO,Sales Manager,Dummy Co,,Dummy import for Pipeline batch filter / outreach test
+Test Delta Candidate,shreya+pipeline-test-4@dollfamilyoffice.com,+14085150245,Manual import,2026-08-03,,,Springfield MO,Sales Manager,Dummy Co,,Dummy import for Pipeline batch filter / outreach test
+Test Echo Candidate,shreya+pipeline-test-5@dollfamilyoffice.com,+14085150245,Manual import,2026-08-03,,,Springfield MO,Sales Manager,Dummy Co,,Dummy import for Pipeline batch filter / outreach test

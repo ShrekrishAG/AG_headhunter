@@ -11,6 +11,7 @@ from lib.constants import (
     OPEN_ROLES,
     ROLE_SLUG,
 )
+from lib.auth import render_sidebar_auth
 from lib.job_description_dialog import request_job_description_dialog
 
 def _inject_sidebar_layout_css() -> None:
@@ -87,15 +88,21 @@ def render_sidebar_nav(
     manager_packets_page,
     pipeline_page,
     r1_page,
+    import_prospects_page=None,
 ) -> None:
     _inject_sidebar_layout_css()
     init_role_selection()
     render_sidebar_branding()
+    render_sidebar_auth()
     role_slug = render_position_selector()
     st.divider()
     st.page_link(pipeline_page, label="Pipeline", use_container_width=True)
     st.page_link(dashboard_page, label="Dashboard", use_container_width=True)
     st.page_link(manager_packets_page, label="Manager packets", use_container_width=True)
+    if import_prospects_page is not None:
+        st.page_link(
+            import_prospects_page, label="Import prospects", use_container_width=True
+        )
     st.page_link(process_page, label="Process", use_container_width=True)
     if st.button("Job description", key="sidebar_job_description", use_container_width=True):
         request_job_description_dialog(role_slug)

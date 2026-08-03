@@ -60,9 +60,31 @@ VP_OF_GROWTH = RoleDefinition(
     ),
 )
 
+GENERAL_MANAGER = RoleDefinition(
+    slug="general-manager",
+    title="General Manager (Roofing / Sales)",
+    qualified_min_score=70,
+    sync_dashboard=True,
+    rubric_categories=(
+        {"label": "Sales & Revenue Leadership", "max_points": 25},
+        {"label": "People Leadership (Hire · Coach · Accountable)", "max_points": 25},
+        {"label": "Operations & P&L Ownership", "max_points": 20},
+        {"label": "Customer Experience & Problem Resolution", "max_points": 15},
+        {"label": "Tools, Systems & Execution Discipline", "max_points": 10},
+        {"label": "Culture Fit & Leadership Readiness", "max_points": 5},
+    ),
+    score_bands=(
+        (85, "Strong interview"),
+        (70, "Good candidate"),
+        (60, "Phone screen"),
+        (0, "Likely not a fit"),
+    ),
+)
+
 ROLES: dict[str, RoleDefinition] = {
     SALES_REP.slug: SALES_REP,
     VP_OF_GROWTH.slug: VP_OF_GROWTH,
+    GENERAL_MANAGER.slug: GENERAL_MANAGER,
 }
 
 ROLE_ALIASES: dict[str, str] = {
@@ -73,12 +95,20 @@ ROLE_ALIASES: dict[str, str] = {
     "vp-growth": VP_OF_GROWTH.slug,
     "vp-of-growth": VP_OF_GROWTH.slug,
     "growth": VP_OF_GROWTH.slug,
+    "gm": GENERAL_MANAGER.slug,
+    "general-manager": GENERAL_MANAGER.slug,
+    "general_manager": GENERAL_MANAGER.slug,
+    "sales-manager": GENERAL_MANAGER.slug,
+    "managing-partner": GENERAL_MANAGER.slug,
 }
 
 # ZipRecruiter project name hints → role (substring match, case-insensitive)
 PROJECT_ROLE_HINTS: tuple[tuple[str, str], ...] = (
     ("dfo - vp headhunter", VP_OF_GROWTH.slug),
     ("vp headhunter", VP_OF_GROWTH.slug),
+    ("general manager", GENERAL_MANAGER.slug),
+    ("sales manager", GENERAL_MANAGER.slug),
+    ("managing partner", GENERAL_MANAGER.slug),
 )
 
 
@@ -133,7 +163,8 @@ def parse_role_from_text(text: str) -> str | None:
         return None
     tokens = (
         r"sales-representative|sales-rep|sales|psr|"
-        r"vp-of-growth|vp-growth|vp|growth"
+        r"vp-of-growth|vp-growth|vp|growth|"
+        r"general-manager|general_manager|gm|sales-manager|managing-partner"
     )
     match = re.search(rf"\b(?:for|role)\s+({tokens})\b", text, flags=re.I)
     if not match:
@@ -144,13 +175,13 @@ def parse_role_from_text(text: str) -> str | None:
 def strip_role_tokens(text: str) -> str:
     cleaned = text
     cleaned = re.sub(
-        r"\bfor\s+(?:sales-representative|sales-rep|sales|psr|vp-of-growth|vp-growth|vp|growth)\b",
+        r"\bfor\s+(?:sales-representative|sales-rep|sales|psr|vp-of-growth|vp-growth|vp|growth|general-manager|general_manager|gm|sales-manager|managing-partner)\b",
         "",
         cleaned,
         flags=re.I,
     )
     cleaned = re.sub(
-        r"\brole\s+(?:sales-representative|sales-rep|sales|psr|vp-of-growth|vp-growth|vp|growth)\b",
+        r"\brole\s+(?:sales-representative|sales-rep|sales|psr|vp-of-growth|vp-growth|vp|growth|general-manager|general_manager|gm|sales-manager|managing-partner)\b",
         "",
         cleaned,
         flags=re.I,

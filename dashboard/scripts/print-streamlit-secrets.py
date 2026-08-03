@@ -24,6 +24,11 @@ SECRET_KEYS = [
     "OUTBOUND_SENDS_ENABLED",
     "CALENDLY_R1_URL",
     "CALENDLY_WEBHOOK_SIGNING_KEY",
+    "HEYMARKET_API_SECRET_ID",
+    "HEYMARKET_API_SECRET_KEY",
+    "HEYMARKET_API_KEY",
+    "HEYMARKET_INBOX_ID",
+    "HEYMARKET_CREATOR_ID",
     "TWILIO_ACCOUNT_SID",
     "TWILIO_AUTH_TOKEN",
     "TWILIO_FROM_NUMBER",
@@ -38,6 +43,8 @@ SECRET_KEYS = [
     "OPENAI_MODEL",
     "REDRAFT_MODE",
     "STREAMLIT_APP_URL",
+    "MANAGER_PACKET_COPY_EMAIL",
+    "GENERATE_OUTREACH_DRAFTS",
 ]
 
 required = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY")
@@ -49,6 +56,19 @@ print("# Paste into Streamlit Cloud → Manage app → Settings → Secrets\n")
 for key in SECRET_KEYS:
     val = values.get(key, "").strip()
     if not val:
+        continue
+    # Nested JSON breaks TOML "..." quoting — use multiline basic strings
+    if key == "HEADHUNTER_USERS" or (val.startswith("[") and '"' in val):
+        # Prefer pretty JSON inside """ so Secrets UI doesn't choke on escapes
+        try:
+            import json
+
+            pretty = json.dumps(json.loads(val), indent=2)
+        except Exception:
+            pretty = val
+        print(f'{key} = """')
+        print(pretty)
+        print('"""')
         continue
     escaped = val.replace("\\", "\\\\").replace('"', '\\"')
     print(f'{key} = "{escaped}"')

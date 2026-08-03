@@ -82,7 +82,9 @@ TWILIO_FROM_NUMBER=+19135551234
 # SendGrid email
 SENDGRID_API_KEY=SG.xxxxxxxx
 SENDGRID_FROM_EMAIL=recruiting@weareaccord.com
-SENDGRID_FROM_NAME=Accord Group Recruiting""",
+SENDGRID_FROM_NAME=Accord Group Recruiting
+SENDGRID_REPLY_TO_EMAIL=avarijohnson@roofally.com
+SENDGRID_REPLY_TO_NAME=Avari Johnson""",
     language="bash",
 )
 

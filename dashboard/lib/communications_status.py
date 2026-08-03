@@ -36,13 +36,13 @@ def integration_rows() -> list[dict]:
             "required_for": "SMS + email booking links",
         },
         {
-            "name": "Calendly booking webhook",
-            "key": "CALENDLY_WEBHOOK_SIGNING_KEY",
-            "configured": bool(get_config("CALENDLY_WEBHOOK_SIGNING_KEY")),
+            "name": "Calendly booking sync",
+            "key": "Supabase Edge Function",
+            "configured": calendly_configured(),
             "detail": (
-                "Signing key set — run webhooks/calendly service"
-                if get_config("CALENDLY_WEBHOOK_SIGNING_KEY")
-                else "Optional — auto stage + booked date on Pipeline"
+                "Deploy calendly-webhook (integrations/calendly-supabase-edge.md)"
+                if calendly_configured()
+                else "Set CALENDLY_R1_URL, then deploy Edge Function for booking sync"
             ),
             "required_for": "Auto Phone screen scheduled when they book",
         },
@@ -63,7 +63,7 @@ def integration_rows() -> list[dict]:
             "configured": sendgrid_configured(),
             "detail": (
                 f"From {get_config('SENDGRID_FROM_EMAIL') or '?'} · "
-                f"Reply-To {get_config('SENDGRID_REPLY_TO_EMAIL', 'brittaneyfola@roofally.com')}"
+                f"Reply-To {get_config('SENDGRID_REPLY_TO_EMAIL', 'avarijohnson@roofally.com')}"
                 if sendgrid_configured()
                 else "Missing API key or from email"
             ),

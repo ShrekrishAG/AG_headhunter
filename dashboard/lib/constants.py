@@ -1,5 +1,7 @@
 """Shared constants for Accord Group Headhunter dashboard."""
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 
@@ -22,6 +24,14 @@ JOB_POSTING_URL = (
 
 OPEN_ROLES = [
     {"slug": "sales-representative", "title": "Project Sales Representative"},
+    {
+        "slug": "general-manager",
+        "title": "General Manager (Roofing / Sales)",
+        "job_posting_url": (
+            "https://app.idealtraits.com/career/Accord-Group-Inc./358151vie"
+        ),
+        "resume_role_prefix": "gm",
+    },
 ]
 
 STREAMLIT_APP_URL = os.getenv(
@@ -32,6 +42,7 @@ PAGE_PATHS = {
     "Pipeline": "",
     "Dashboard": "dashboard",
     "Process": "process",
+    "Import prospects": "import-prospects",
     "Job description": "job-description",
     "R1 Scoring": "r1-scoring",
     "Outreach log": "outreach-log",
@@ -79,6 +90,40 @@ RUBRIC_CATEGORIES = [
     },
 ]
 
+# General Manager resume rubric — see roles/general-manager/scorecard.md
+GM_RUBRIC_CATEGORIES = [
+    {
+        "label": "Sales & Revenue Leadership",
+        "max_points": 25,
+        "hint": "Sales/sales-mgmt tenure; team or personal revenue goals; territory ownership",
+    },
+    {
+        "label": "People Leadership (Hire · Coach · Accountable)",
+        "max_points": 25,
+        "hint": "Recruiting, hiring, coaching, performance management, span of control",
+    },
+    {
+        "label": "Operations & P&L Ownership",
+        "max_points": 20,
+        "hint": "Branch/unit P&L, margins, expenses, multi-function ops ownership",
+    },
+    {
+        "label": "Customer Experience & Problem Resolution",
+        "max_points": 15,
+        "hint": "Escalations, quality, collections, consistent customer outcomes",
+    },
+    {
+        "label": "Tools, Systems & Execution Discipline",
+        "max_points": 10,
+        "hint": "CRM, scorecards/forecasting, field/mobile execution",
+    },
+    {
+        "label": "Culture Fit & Leadership Readiness",
+        "max_points": 5,
+        "hint": "Coachability, ownership, field-present leadership",
+    },
+]
+
 RED_FLAG_MAX_DEDUCTION = 15
 
 SCORE_BANDS = [
@@ -89,6 +134,26 @@ SCORE_BANDS = [
 ]
 
 QUALIFIED_MIN_SCORE = 65
+GM_QUALIFIED_MIN_SCORE = 70
+
+ROLE_RUBRICS: dict[str, dict] = {
+    "sales-representative": {
+        "categories": RUBRIC_CATEGORIES,
+        "qualified_min_score": QUALIFIED_MIN_SCORE,
+        "score_bands": SCORE_BANDS,
+        "job_posting_url": JOB_POSTING_URL,
+        "resume_role_prefix": RESUME_ROLE_PREFIX,
+    },
+    "general-manager": {
+        "categories": GM_RUBRIC_CATEGORIES,
+        "qualified_min_score": GM_QUALIFIED_MIN_SCORE,
+        "score_bands": SCORE_BANDS,
+        "job_posting_url": (
+            "https://app.idealtraits.com/career/Accord-Group-Inc./358151vie"
+        ),
+        "resume_role_prefix": "gm",
+    },
+}
 
 # Legacy R1 phone-screen dimensions (1–4) — kept for interviewer scorecards
 SCORE_LABELS = {
@@ -225,6 +290,23 @@ def role_title_for_slug(slug: str) -> str:
         if role["slug"] == slug:
             return role["title"]
     return slug
+
+
+def role_rubric_for_slug(slug: str | None = None) -> dict:
+    key = slug or ROLE_SLUG
+    return ROLE_RUBRICS.get(key, ROLE_RUBRICS[ROLE_SLUG])
+
+
+def rubric_categories_for_slug(slug: str | None = None) -> list:
+    return list(role_rubric_for_slug(slug)["categories"])
+
+
+def qualified_min_score_for_slug(slug: str | None = None) -> int:
+    return int(role_rubric_for_slug(slug)["qualified_min_score"])
+
+
+def job_posting_url_for_slug(slug: str | None = None) -> str:
+    return str(role_rubric_for_slug(slug).get("job_posting_url") or JOB_POSTING_URL)
 
 
 def get_selected_role_slug() -> str:

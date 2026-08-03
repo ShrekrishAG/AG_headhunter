@@ -10,10 +10,12 @@ SENDGRID_FROM_EMAIL=recruiting@weareaccord.com
 CALENDLY_R1_URL=https://calendly.com/your-link
 ```
 
-Optional display name (future template use):
+Optional display name and Reply-To (candidate replies):
 
 ```bash
 SENDGRID_FROM_NAME=Accord Group Recruiting
+SENDGRID_REPLY_TO_EMAIL=avarijohnson@roofally.com
+SENDGRID_REPLY_TO_NAME=Avari Johnson
 ```
 
 ## Setup steps

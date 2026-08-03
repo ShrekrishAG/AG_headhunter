@@ -1,0 +1,3 @@
+full_name,email,phone,source,date_imported,linkedin_url,linkedin_text,market,current_title,current_company,resume_filename,notes
+Jane Smith,jane.smith@example.com,+19135551234,Indeed,2026-07-31,https://www.linkedin.com/in/janesmith,"Paste About + Experience here if no resume PDF",Wichita KS,Sales Manager,Acme Roofing,2026-07-31-gm-smith-jane.pdf,Referred by branch GM
+John Doe,john.doe@example.com,8165550199,Referral,2026-07-31,https://www.linkedin.com/in/johndoe,,KC MO,Branch Manager,Home Services Co,,

@@ -13,9 +13,11 @@ load_dotenv(ROOT / ".env")
 sys.path.insert(0, str(ROOT))
 
 from lib.branding import configure_app_logo  # noqa: E402
+from lib.auth import require_login  # noqa: E402
 from lib.constants import APP_NAME, FAVICON_PATH, LOGO_PATH  # noqa: E402
 from lib.sidebar import render_sidebar_nav  # noqa: E402
 from lib.job_description_dialog import maybe_show_job_description_dialog  # noqa: E402
+from lib.scheduled_packet_sends import start_scheduled_packet_worker  # noqa: E402
 
 _icon_path = FAVICON_PATH if FAVICON_PATH.exists() else LOGO_PATH
 st.set_page_config(
@@ -26,6 +28,18 @@ st.set_page_config(
 )
 
 configure_app_logo()
+
+if not require_login():
+    st.stop()
+
+
+@st.cache_resource
+def _start_packet_send_scheduler() -> bool:
+    start_scheduled_packet_worker(interval_seconds=20.0)
+    return True
+
+
+_start_packet_send_scheduler()
 
 # views/ (not pages/) — Streamlit assumes legacy multipage routing for a pages/ folder
 # and shows a false "Page not found" modal on direct URLs before st.navigation() runs.
@@ -51,6 +65,11 @@ manager_packets_page = st.Page(
     f"{VIEWS}/7_Manager_Packets.py",
     title="Manager packets",
     url_path="manager-packets",
+)
+import_prospects_page = st.Page(
+    f"{VIEWS}/8_Import_Prospects.py",
+    title="Import prospects",
+    url_path="import-prospects",
 )
 pipeline_page = st.Page(
     f"{VIEWS}/2_Pipeline_Report.py",
@@ -83,6 +102,7 @@ pg = st.navigation(
             pipeline_page,
             dashboard_page,
             manager_packets_page,
+            import_prospects_page,
             process_page,
             job_description_page,
             *legacy_pages,
@@ -100,6 +120,7 @@ with st.sidebar:
         communications_page=communications_page,
         outreach_log_page=outreach_log_page,
         manager_packets_page=manager_packets_page,
+        import_prospects_page=import_prospects_page,
         pipeline_page=pipeline_page,
         r1_page=r1_page,
     )

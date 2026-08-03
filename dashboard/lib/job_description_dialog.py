@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from lib.constants import JOB_POSTING_URL, ROLE_SLUG, role_title_for_slug
+from lib.constants import ROLE_SLUG, job_posting_url_for_slug, role_title_for_slug
 from lib.role_brief import load_role_brief, role_brief_path, save_role_brief
 
 JD_DIALOG_OPEN_KEY = "jd_dialog_open"
@@ -45,7 +45,11 @@ def maybe_show_job_description_dialog() -> None:
 def open_job_description_dialog(role_slug: str) -> None:
     title = role_title_for_slug(role_slug)
     st.markdown(f"### {title}")
-    st.link_button("View on IdealTraits", JOB_POSTING_URL, use_container_width=True)
+    st.link_button(
+        "View on IdealTraits",
+        job_posting_url_for_slug(role_slug),
+        use_container_width=True,
+    )
 
     st.info(
         "The **resume pre-screen agent** reads this file (`roles/…/brief.md`) plus "

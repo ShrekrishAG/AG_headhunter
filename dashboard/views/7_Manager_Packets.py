@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, time
 from pathlib import Path
 
 import pandas as pd
@@ -12,7 +13,6 @@ from lib.constants import APP_NAME, DASHBOARD_ROOT, get_selected_role_title
 from lib.manager_markets import load_market_managers
 from lib.manager_packets import (
     AssignmentPreview,
-    EXPORTS_ROOT,
     REQUIRED_PACKET_COPY_EMAILS,
     build_assignment_preview,
     list_export_batches,
@@ -23,8 +23,17 @@ from lib.manager_packets import (
     verify_copy_recipients_for_packets,
 )
 from lib.r1_email_invite import sendgrid_configured
+from lib.scheduled_packet_sends import (
+    CT,
+    cancel_scheduled_job,
+    default_schedule_suggestion,
+    format_send_at_display,
+    list_scheduled_jobs,
+    parse_local_send_at,
+    process_due_jobs,
+    schedule_packet_send,
+)
 from lib.supabase_client import get_supabase
-
 st.title("Manager packets")
 st.caption(
     f"{APP_NAME} · {get_selected_role_title()} · "
@@ -258,6 +267,131 @@ else:
                     st.session_state.pop("manager_packet_preview", None)
                     st.session_state.pop("manager_packet_preview_batch", None)
                     st.rerun()
+
+        st.divider()
+        st.subheader("Schedule send")
+        st.caption(
+            "Queue this previewed batch for a later Central Time send. "
+            "Keep this Streamlit app running so the background worker can fire it."
+        )
+        suggest = default_schedule_suggestion(minutes_from_now=5)
+        sc1, sc2, sc3 = st.columns([1, 1, 1])
+        with sc1:
+            sched_date = st.date_input(
+                "Send date (CT)",
+                value=suggest.date(),
+                key=f"packet_sched_date_{preview.export_batch}",
+            )
+        with sc2:
+            sched_time = st.time_input(
+                "Send time (CT)",
+                value=time(suggest.hour, suggest.minute),
+                key=f"packet_sched_time_{preview.export_batch}",
+            )
+        with sc3:
+            st.markdown(" ")
+            st.caption(f"Now: {datetime.now(CT).strftime('%I:%M %p CT')}")
+
+        send_at = parse_local_send_at(sched_date, sched_time)
+        if send_at <= datetime.now(CT):
+            st.error("Pick a send time in the future (Central Time).")
+            send_at_ok = False
+        else:
+            send_at_ok = True
+            st.info(
+                f"Will send **{len(preview.packets)} packet(s)** from "
+                f"`{preview.export_batch}` at **{format_send_at_display(send_at.isoformat())}**"
+                + (" (test mode → your email)" if test_mode else " (live to managers)")
+            )
+
+        schedule_disabled = (
+            not send_at_ok
+            or send_disabled
+            or (test_mode and not redirect)
+        )
+        if st.button(
+            "Schedule send",
+            disabled=schedule_disabled,
+            key=f"packet_schedule_btn_{preview.export_batch}",
+        ):
+            try:
+                job = schedule_packet_send(
+                    export_batch=preview.export_batch,
+                    send_at=send_at,
+                    packet_count=len(preview.packets),
+                    candidate_count=sum(len(p.candidates) for p in preview.packets),
+                    test_mode=test_mode,
+                    redirect_to=redirect,
+                )
+                st.success(
+                    f"Scheduled `{job['id']}` for "
+                    f"{format_send_at_display(job['send_at'])}."
+                )
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+st.divider()
+st.subheader("Scheduled sends")
+# Process anything already due when the page loads (in addition to the worker).
+due_results = process_due_jobs(sb)
+for result in due_results:
+    if result.get("status") in ("sent", "partial"):
+        st.success(
+            f"Fired schedule `{result.get('id')}` for `{result.get('export_batch')}`: "
+            f"{len(result.get('successes') or [])} sent."
+        )
+    elif result.get("status") == "failed":
+        st.error(
+            f"Schedule `{result.get('id')}` failed: "
+            f"{'; '.join(result.get('errors') or [])}"
+        )
+
+scheduled = list_scheduled_jobs(include_done=True)
+active = [j for j in scheduled if j.get("status") in ("scheduled", "sending")]
+recent = [j for j in scheduled if j.get("status") not in ("scheduled", "sending")][-8:]
+if not active and not recent:
+    st.caption("No scheduled packet sends yet.")
+else:
+    if active:
+        for job in active:
+            c_a, c_b = st.columns([4, 1])
+            mode = "test" if job.get("test_mode") else "live"
+            with c_a:
+                st.write(
+                    f"**`{job['id']}`** · `{job['export_batch']}` · {mode} · "
+                    f"{job.get('packet_count', '?')} packets · "
+                    f"{format_send_at_display(job.get('send_at') or '')} · "
+                    f"_{job.get('status')}_"
+                )
+            with c_b:
+                if job.get("status") == "scheduled" and st.button(
+                    "Cancel",
+                    key=f"cancel_sched_{job['id']}",
+                    use_container_width=True,
+                ):
+                    cancel_scheduled_job(job["id"])
+                    st.rerun()
+    if recent:
+        with st.expander("Recent schedule history", expanded=False):
+            hist_rows = []
+            for job in reversed(recent):
+                hist_rows.append(
+                    {
+                        "ID": job.get("id"),
+                        "Batch": job.get("export_batch"),
+                        "When": format_send_at_display(job.get("send_at") or ""),
+                        "Mode": "test" if job.get("test_mode") else "live",
+                        "Status": job.get("status"),
+                        "Result": (
+                            f"{len(job.get('successes') or [])} ok / "
+                            f"{len(job.get('errors') or [])} err"
+                            if job.get("status") in ("sent", "partial", "failed")
+                            else (job.get("error_message") or "—")
+                        ),
+                    }
+                )
+            st.dataframe(pd.DataFrame(hist_rows), use_container_width=True, hide_index=True)
 
 st.divider()
 st.subheader("Send history")

@@ -27,8 +27,11 @@ from lib.candidate_display import (
 from lib.export_display import format_exported_display
 from lib.pipeline_scored_export import (
     default_export_filename,
+    filter_candidates_by_export_batch,
+    filter_candidates_by_import_batch,
     filter_candidates_for_scored_export,
     list_export_batches_from_candidates,
+    list_import_batches_from_candidates,
     list_local_export_batches,
     scored_export_csv_bytes,
     scored_export_rows,
@@ -1121,7 +1124,9 @@ def _render_candidate_card_body(
         if exported_label != "—":
             st.write(f"**Exported:** {exported_label}")
             if c.get("export_batch"):
-                st.caption(f"Batch `{c['export_batch']}`")
+                st.caption(f"Export batch `{c['export_batch']}`")
+            if c.get("import_batch"):
+                st.caption(f"Import batch `{c['import_batch']}`")
         if c.get("email"):
             st.write(f"**Email:** {c['email']}")
         if c.get("phone"):
@@ -1279,20 +1284,53 @@ filter_stage = st.multiselect(
     key="pipeline_filter_stage",
 )
 
+local_batches = list_local_export_batches()
+export_batch_options = list_export_batches_from_candidates(candidates) or [
+    b["batch"] for b in local_batches
+]
+export_batch_labels = {
+    b["batch"]: f"{b['created_display']} · {b['candidate_count']} · `{b['batch']}`"
+    for b in local_batches
+}
+import_batch_options = list_import_batches_from_candidates(candidates)
+
+batch_col1, batch_col2 = st.columns(2)
+with batch_col1:
+    filter_export_batch = st.selectbox(
+        "Export batch (ZipRecruiter)",
+        options=["All"] + export_batch_options,
+        format_func=lambda key: (
+            "All export batches"
+            if key == "All"
+            else export_batch_labels.get(key, key)
+        ),
+        key="pipeline_filter_export_batch",
+        help="Same idea as Manager packets — filter the Pipeline list to one ZR export.",
+    )
+with batch_col2:
+    filter_import_batch = st.selectbox(
+        "Import batch (prospects)",
+        options=["All"] + import_batch_options,
+        format_func=lambda key: (
+            "All import batches" if key == "All" else key
+        ),
+        key="pipeline_filter_import_batch",
+        help="Set when you use Import prospects. Run the import_batch SQL migration first.",
+    )
+if not import_batch_options:
+    st.caption(
+        "No import batches yet — import a CSV on **Import prospects**, "
+        "or apply `20260803190000_candidate_import_batch.sql` if imports fail."
+    )
+
 with st.expander("Download scored export", expanded=False):
     st.caption(
         "CSV with name, contact, market, score /100, recommendation, stage, "
         "and ZipRecruiter export batch/date (Central Time). "
         "Batch/date filters match the local export folders by email."
     )
-    local_batches = list_local_export_batches()
-    export_batches = list_export_batches_from_candidates(candidates) or [
-        b["batch"] for b in local_batches
-    ]
-    batch_labels = {
-        b["batch"]: f"{b['created_display']} · {b['candidate_count']} · `{b['batch']}`"
-        for b in local_batches
-    }
+    export_batches = export_batch_options
+    batch_labels = export_batch_labels
     filter_mode = st.radio(
         "Filter by",
         options=["Export batch", "Export date range", "All candidates"],
@@ -1416,6 +1454,14 @@ filtered = _filter_by_metric(
     active_metric,
     evals_by_candidate,
 )
+if filter_export_batch and filter_export_batch != "All":
+    filtered = filter_candidates_by_export_batch(
+        filtered, export_batch=filter_export_batch
+    )
+if filter_import_batch and filter_import_batch != "All":
+    filtered = filter_candidates_by_import_batch(
+        filtered, import_batch=filter_import_batch
+    )
 if filter_contact == "Contacted":
     filtered = [c for c in filtered if is_contacted(c)]
 elif filter_contact == "Not contacted":

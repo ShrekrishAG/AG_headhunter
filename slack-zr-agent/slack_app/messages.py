@@ -60,7 +60,7 @@ def export_candidates_modal() -> dict:
                     "multiline": True,
                     "placeholder": {
                         "type": "plain_text",
-                        "text": "Accord Seattle=10\nAccord NYC=5",
+                        "text": "TGC - KC, MO=60\nTGC - Wichita, KS=20\nTGC - madison WI=10",
                     },
                 },
                 "label": {

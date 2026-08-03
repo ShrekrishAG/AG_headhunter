@@ -84,11 +84,15 @@ def send_r1_email(*, to_email: str, subject: str, body: str) -> str:
     api_key = get_config("SENDGRID_API_KEY")
     from_email = get_config("SENDGRID_FROM_EMAIL")
     from_name = get_config("SENDGRID_FROM_NAME", "Accord Group Recruiting")
+    reply_to_email = get_config(
+        "SENDGRID_REPLY_TO_EMAIL", "avarijohnson@roofally.com"
+    )
+    reply_to_name = get_config("SENDGRID_REPLY_TO_NAME", "Avari Johnson")
     if not api_key or not from_email:
         raise RuntimeError("SendGrid not configured (SENDGRID_API_KEY, SENDGRID_FROM_EMAIL)")
 
     import sendgrid
-    from sendgrid.helpers.mail import Email, Mail
+    from sendgrid.helpers.mail import Email, Mail, ReplyTo
 
     message = Mail(
         from_email=Email(from_email, from_name),
@@ -96,6 +100,8 @@ def send_r1_email(*, to_email: str, subject: str, body: str) -> str:
         subject=subject.strip(),
         plain_text_content=body.strip(),
     )
+    if reply_to_email:
+        message.reply_to = ReplyTo(reply_to_email.strip(), reply_to_name.strip() or None)
     client = sendgrid.SendGridAPIClient(api_key)
     response = client.send(message)
     return response.headers.get("X-Message-Id", str(response.status_code))

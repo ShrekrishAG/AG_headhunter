@@ -18,6 +18,15 @@ GET_CANDIDATE_INFO_URL = (
     f"{ZIPRECRUITER_BASE_URL}/api/rdb2/"
     "employer.rdb2.backend.proto.v1.ResumeAPI/GetCandidateInfo"
 )
+GET_PROJECT_BY_ID_URL = (
+    f"{ZIPRECRUITER_BASE_URL}/api/rdb2/"
+    "employer.rdb2.backend.proto.v1.ProjectAPI/GetProjectById"
+)
+SEARCH_SOURCING_URL = (
+    f"{ZIPRECRUITER_BASE_URL}/api/rdb2/"
+    "employer.rdb2.backend.proto.v1.SearchAPI/Search"
+)
+SOURCING_PAGE_SIZE = 25
 
 BROWSER_FETCH_JSON = """
 async ({url, payload}) => {
@@ -169,6 +178,58 @@ async def fetch_unlocked_resumes(page: Page, project_id: str) -> list[dict[str, 
         page_number += 1
 
     return results
+
+
+async def fetch_project_search_filters(page: Page, project_id: str) -> dict[str, Any]:
+    data = await _browser_post_json(
+        page,
+        GET_PROJECT_BY_ID_URL,
+        {"projectId": project_id},
+    )
+    project = data.get("project") if isinstance(data.get("project"), dict) else {}
+    terms = project.get("searchTerms") if isinstance(project.get("searchTerms"), dict) else {}
+    filters = terms.get("searchFilters")
+    return filters if isinstance(filters, dict) else {}
+
+
+async def fetch_sourcing_jobseekers(
+    page: Page,
+    project_id: str,
+    *,
+    limit: int = SOURCING_PAGE_SIZE,
+) -> list[dict[str, Any]]:
+    """Paginate ZipRecruiter SearchAPI/Search past the first page of ~25 prospects."""
+    if limit <= 0:
+        return []
+
+    filters = await fetch_project_search_filters(page, project_id)
+    if not filters:
+        return []
+
+    results: list[dict[str, Any]] = []
+    page_offset = 1
+    max_pages = max(1, (limit + SOURCING_PAGE_SIZE - 1) // SOURCING_PAGE_SIZE) + 2
+
+    while len(results) < limit and page_offset <= max_pages:
+        data = await _browser_post_json(
+            page,
+            SEARCH_SOURCING_URL,
+            {
+                "pageSize": SOURCING_PAGE_SIZE,
+                "pageOffset": page_offset,
+                "searchFilters": filters,
+                "projectId": project_id,
+            },
+        )
+        batch = data.get("jobseekers") or []
+        if not batch:
+            break
+        results.extend(batch)
+        if len(batch) < SOURCING_PAGE_SIZE:
+            break
+        page_offset += 1
+
+    return results[:limit]
 
 
 async def fetch_candidate_info(page: Page, encrypted_jobseeker_id: str) -> dict[str, Any]:

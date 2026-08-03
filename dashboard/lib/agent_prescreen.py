@@ -53,8 +53,8 @@ def _read_profile_text(candidate: dict, role_slug: str = DEFAULT_ROLE_SLUG) -> s
     return profile.read_text(encoding="utf-8")
 
 
-def parse_agent_score(candidate: dict) -> int | None:
-    text = _read_profile_text(candidate)
+def parse_agent_score(candidate: dict, role_slug: str = DEFAULT_ROLE_SLUG) -> int | None:
+    text = _read_profile_text(candidate, role_slug)
     if text:
         match = TOTAL_SCORE_PATTERN.search(text)
         if match:
@@ -73,15 +73,19 @@ def parse_agent_score(candidate: dict) -> int | None:
     return None
 
 
-def parse_agent_recommendation(candidate: dict) -> str | None:
-    text = _read_profile_text(candidate)
+def parse_agent_recommendation(
+    candidate: dict, role_slug: str = DEFAULT_ROLE_SLUG
+) -> str | None:
+    text = _read_profile_text(candidate, role_slug)
     if text:
         match = RECOMMENDATION_PATTERN.search(text)
         if match:
             return _normalize_recommendation(match.group(1))
         legacy = LEGACY_RECOMMEND_PATTERN.search(text)
         if legacy:
-            return _legacy_to_new_recommendation(legacy.group(1), parse_agent_score(candidate))
+            return _legacy_to_new_recommendation(
+                legacy.group(1), parse_agent_score(candidate, role_slug)
+            )
 
     notes = candidate.get("notes") or ""
     match = NOTES_RECOMMEND_PATTERN.search(notes)

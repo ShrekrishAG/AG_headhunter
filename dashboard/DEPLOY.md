@@ -54,7 +54,17 @@ TWILIO_FROM_NUMBER = "+1..."
 SENDGRID_API_KEY = "SG...."
 SENDGRID_FROM_EMAIL = "..."
 SENDGRID_FROM_NAME = "Accord Group Recruiting"
+SENDGRID_REPLY_TO_EMAIL = "avarijohnson@roofally.com"
+SENDGRID_REPLY_TO_NAME = "Avari Johnson"
+HEADHUNTER_AUTH_ENABLED = "true"
+HEADHUNTER_USERS = '[{"username":"you@company.com","name":"Your Name","password_hash":"pbkdf2$..."}]'
 OPENAI_API_KEY = "sk-..."   # optional if REDRAFT_MODE=template
+```
+
+Generate password hashes locally:
+
+```bash
+cd dashboard && python scripts/hash-dashboard-password.py 'your-password' shreya 'Shreya Krishna'
 ```
 
 ## 4. Deploy

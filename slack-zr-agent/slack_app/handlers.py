@@ -650,10 +650,21 @@ async def handle_zr_export(ack, command, client):
         )
         return
 
+    command_text = (command.get("text") or "").strip()
+    if not command_text:
+        metadata = json.dumps({"channel": channel_id, "thread_ts": None})
+        modal = export_candidates_modal()
+        modal["private_metadata"] = metadata
+        await client.views_open(
+            trigger_id=command["trigger_id"],
+            view=modal,
+        )
+        return
+
     await _run_candidate_export(
         client,
         channel_id,
-        options=parse_export_options(command.get("text") or ""),
+        options=parse_export_options(command_text),
     )
 
 

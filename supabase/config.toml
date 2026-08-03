@@ -1,0 +1,12 @@
+# Accord Headhunter — Supabase project config (Edge Functions + migrations)
+
+project_id = "atrkzqcfdqpefmphtifh"
+
+[api]
+enabled = true
+
+[db]
+major_version = 15
+
+[functions.calendly-webhook]
+verify_jwt = false

@@ -12,16 +12,30 @@ from pathlib import Path
 from typing import Any
 
 from lib.agent_prescreen import parse_agent_score
-from lib.constants import DEFAULT_OWNER, RED_FLAG_MAX_DEDUCTION, ROLE_SLUG, RUBRIC_CATEGORIES
+from lib.constants import (
+    DEFAULT_OWNER,
+    RED_FLAG_MAX_DEDUCTION,
+    ROLE_SLUG,
+    role_title_for_slug,
+    rubric_categories_for_slug,
+)
 from lib.resume_slug import full_name_to_resume_slug
 from lib.rubric import compute_total, qualifies_for_pipeline, recommendation_for_total
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INBOX = REPO_ROOT / "imports" / "inbox"
-CANDIDATES_DIR = REPO_ROOT / "candidates" / ROLE_SLUG
-SCORECARD_PATH = REPO_ROOT / "roles" / ROLE_SLUG / "scorecard.md"
-BRIEF_PATH = REPO_ROOT / "roles" / ROLE_SLUG / "brief.md"
-SAMPLE_PATH = REPO_ROOT / "roles" / ROLE_SLUG / "sample-walkthrough.md"
+
+
+def _role_paths(role_slug: str) -> tuple[Path, Path, Path, Path]:
+    candidates_dir = REPO_ROOT / "candidates" / role_slug
+    scorecard = REPO_ROOT / "roles" / role_slug / "scorecard.md"
+    brief = REPO_ROOT / "roles" / role_slug / "brief.md"
+    sample = REPO_ROOT / "roles" / role_slug / "sample-walkthrough.md"
+    return candidates_dir, scorecard, brief, sample
+
+
+# Defaults keep sales-rep scripts working.
+CANDIDATES_DIR, SCORECARD_PATH, BRIEF_PATH, SAMPLE_PATH = _role_paths(ROLE_SLUG)
 
 PENDING_MARKERS = (
     "Pending resume pre-screen",
@@ -30,8 +44,9 @@ PENDING_MARKERS = (
 TOTAL_SCORE_PATTERN = re.compile(r"\*\*Total score:\*\*\s*(\d+)\s*/\s*100", re.I)
 
 
-def profile_path_for_slug(slug: str) -> Path:
-    return CANDIDATES_DIR / slug / "profile.md"
+def profile_path_for_slug(slug: str, role_slug: str = ROLE_SLUG) -> Path:
+    candidates_dir, _, _, _ = _role_paths(role_slug)
+    return candidates_dir / slug / "profile.md"
 
 
 def profile_is_scored(path: Path) -> bool:
@@ -43,10 +58,11 @@ def profile_is_scored(path: Path) -> bool:
     return bool(TOTAL_SCORE_PATTERN.search(text))
 
 
-def resume_pdf_for_slug(slug: str) -> Path | None:
-    from lib.constants import RESUME_ROLE_PREFIX
+def resume_pdf_for_slug(slug: str, role_slug: str = ROLE_SLUG) -> Path | None:
+    from lib.constants import role_rubric_for_slug
 
-    matches = sorted(INBOX.rglob(f"*-{RESUME_ROLE_PREFIX}-{slug}.pdf"))
+    prefix = role_rubric_for_slug(role_slug).get("resume_role_prefix") or "sales-rep"
+    matches = sorted(INBOX.rglob(f"*-{prefix}-{slug}.pdf"))
     return matches[-1] if matches else None
 
 
@@ -75,16 +91,19 @@ def _llm_prescreen(
     scorecard_text: str,
     brief_text: str,
     sample_text: str,
+    role_slug: str = ROLE_SLUG,
 ) -> dict[str, Any]:
     from lib.llm_client import chat_completion, llm_configured
 
     if not llm_configured():
         raise RuntimeError("OPENAI_API_KEY not set — cannot auto prescreen")
 
-    category_labels = [c["label"] for c in RUBRIC_CATEGORIES]
-    prompt = f"""You are the Accord Group recruiting agent. Score this Project Sales Representative candidate using the 100-point resume rubric.
+    categories = rubric_categories_for_slug(role_slug)
+    category_labels = [c["label"] for c in categories]
+    role_title = role_title_for_slug(role_slug)
+    prompt = f"""You are the Accord Group recruiting agent. Score this {role_title} candidate using the 100-point resume rubric.
 
-Score ONLY from resume evidence. Follow the sample walkthrough style (Jordan Martinez = 77, Good candidate).
+Score ONLY from resume evidence. Follow the sample walkthrough style.
 
 ## Role brief
 {brief_text[:4000]}
@@ -105,9 +124,9 @@ Return ONLY valid JSON (no markdown fences):
 {{
   "current_title": "string or null",
   "current_company": "string or null",
-  "summary": "2-4 sentences on fit for Project Sales Rep at Accord Group",
+  "summary": "2-4 sentences on fit for {role_title} at Accord Group",
   "categories": {{
-    "{category_labels[0]}": {{"score": 0-{RUBRIC_CATEGORIES[0]["max_points"]}, "evidence": "short bullet"}},
+    "{category_labels[0]}": {{"score": 0-{categories[0]["max_points"]}, "evidence": "short bullet"}},
     ... one key per category label exactly as above ...
   }},
   "red_flag_deduction": 0-{RED_FLAG_MAX_DEDUCTION},
@@ -144,10 +163,12 @@ def render_scored_profile(
     slug: str,
     score_data: dict[str, Any],
     existing_text: str,
+    role_slug: str = ROLE_SLUG,
 ) -> str:
+    categories = rubric_categories_for_slug(role_slug)
     category_scores: dict[str, int] = {}
     rows_md: list[str] = []
-    for cat in RUBRIC_CATEGORIES:
+    for cat in categories:
         label = cat["label"]
         entry = score_data.get("categories", {}).get(label, {})
         score = int(entry.get("score", 0))
@@ -157,9 +178,9 @@ def render_scored_profile(
         rows_md.append(f"| {label} | {cat['max_points']} | {score} | {evidence} |")
 
     red_deduction = max(0, min(RED_FLAG_MAX_DEDUCTION, int(score_data.get("red_flag_deduction", 0))))
-    total = compute_total(category_scores, red_deduction)
+    total = compute_total(category_scores, red_deduction, role_slug=role_slug)
     rec = recommendation_for_total(total)
-    stage = "Qualified" if qualifies_for_pipeline(total, rec) else "Identified"
+    stage = "Qualified" if qualifies_for_pipeline(total, rec, role_slug=role_slug) else "Identified"
 
     title = score_data.get("current_title") or row.get("current_title") or "—"
     company = score_data.get("current_company") or row.get("current_company") or "—"
@@ -197,7 +218,7 @@ def render_scored_profile(
 
     return f"""# Candidate profile
 
-**Role slug:** {ROLE_SLUG}  
+**Role slug:** {role_slug}  
 **Name:** {row["full_name"]}  
 **Current title / company:** {title_line}  
 **LinkedIn:** {row.get("linkedin_url") or "—"}  
@@ -242,8 +263,14 @@ def render_scored_profile(
 """
 
 
-def prescreen_candidate(row: dict, *, slug: str, profile_path: Path) -> bool:
-    pdf = resume_pdf_for_slug(slug)
+def prescreen_candidate(
+    row: dict,
+    *,
+    slug: str,
+    profile_path: Path,
+    role_slug: str = ROLE_SLUG,
+) -> bool:
+    pdf = resume_pdf_for_slug(slug, role_slug=role_slug)
     if not pdf:
         print(f"  Skip prescreen (no PDF): {row['full_name']}", flush=True)
         return False
@@ -253,10 +280,11 @@ def prescreen_candidate(row: dict, *, slug: str, profile_path: Path) -> bool:
         print(f"  Skip prescreen (empty PDF): {row['full_name']}", flush=True)
         return False
 
+    _, scorecard_path, brief_path, sample_path = _role_paths(role_slug)
     existing = profile_path.read_text(encoding="utf-8") if profile_path.exists() else ""
-    scorecard = SCORECARD_PATH.read_text(encoding="utf-8") if SCORECARD_PATH.exists() else ""
-    brief = BRIEF_PATH.read_text(encoding="utf-8") if BRIEF_PATH.exists() else ""
-    sample = SAMPLE_PATH.read_text(encoding="utf-8") if SAMPLE_PATH.exists() else ""
+    scorecard = scorecard_path.read_text(encoding="utf-8") if scorecard_path.exists() else ""
+    brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else ""
+    sample = sample_path.read_text(encoding="utf-8") if sample_path.exists() else ""
 
     score_data = _llm_prescreen(
         resume_text=resume_text,
@@ -264,17 +292,93 @@ def prescreen_candidate(row: dict, *, slug: str, profile_path: Path) -> bool:
         scorecard_text=scorecard,
         brief_text=brief,
         sample_text=sample,
+        role_slug=role_slug,
     )
     profile_path.parent.mkdir(parents=True, exist_ok=True)
     profile_path.write_text(
-        render_scored_profile(row=row, slug=slug, score_data=score_data, existing_text=existing),
+        render_scored_profile(
+            row=row,
+            slug=slug,
+            score_data=score_data,
+            existing_text=existing,
+            role_slug=role_slug,
+        ),
         encoding="utf-8",
     )
     print(f"  Prescreened: {row['full_name']}", flush=True)
     return True
 
 
-def prescreen_all(rows: list[dict]) -> tuple[int, int]:
+def resolve_scoring_text(
+    *,
+    resume_path: Path | None = None,
+    linkedin_text: str | None = None,
+    linkedin_url: str | None = None,
+) -> tuple[str | None, str]:
+    """Return (text, source) using cascade: resume → linkedin_text → URL fetch → none."""
+    if resume_path and resume_path.is_file():
+        text = pdftotext(resume_path)
+        if text.strip():
+            return text, "resume"
+
+    paste = (linkedin_text or "").strip()
+    if len(paste) >= 80:
+        return paste, "linkedin_text"
+
+    url = (linkedin_url or "").strip()
+    if url:
+        from lib.linkedin_text import fetch_linkedin_profile_text
+
+        fetched = fetch_linkedin_profile_text(url)
+        if fetched and len(fetched.strip()) >= 80:
+            return fetched, "linkedin_fetch"
+
+    return None, "none"
+
+
+def prescreen_candidate_from_text(
+    row: dict,
+    *,
+    source_text: str,
+    role_slug: str = ROLE_SLUG,
+    text_source: str = "resume",
+) -> bool:
+    """Score a candidate from arbitrary evidence text and write profile.md + notes-ready file."""
+    slug = full_name_to_resume_slug(row["full_name"])
+    profile_path = profile_path_for_slug(slug, role_slug=role_slug)
+    _, scorecard_path, brief_path, sample_path = _role_paths(role_slug)
+
+    existing = profile_path.read_text(encoding="utf-8") if profile_path.exists() else ""
+    scorecard = scorecard_path.read_text(encoding="utf-8") if scorecard_path.exists() else ""
+    brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else ""
+    sample = sample_path.read_text(encoding="utf-8") if sample_path.exists() else ""
+
+    labeled = (
+        f"[Evidence source: {text_source}]\n\n{source_text.strip()}"
+    )
+    score_data = _llm_prescreen(
+        resume_text=labeled,
+        profile_text=existing,
+        scorecard_text=scorecard,
+        brief_text=brief,
+        sample_text=sample,
+        role_slug=role_slug,
+    )
+    profile_path.parent.mkdir(parents=True, exist_ok=True)
+    profile_path.write_text(
+        render_scored_profile(
+            row=row,
+            slug=slug,
+            score_data=score_data,
+            existing_text=existing,
+            role_slug=role_slug,
+        ),
+        encoding="utf-8",
+    )
+    return True
+
+
+def prescreen_all(rows: list[dict], *, role_slug: str = ROLE_SLUG) -> tuple[int, int]:
     unscored = list_unscored_from_supabase(rows)
     if not unscored:
         return 0, 0
@@ -295,7 +399,12 @@ def prescreen_all(rows: list[dict]) -> tuple[int, int]:
         if i > 0:
             time.sleep(int(os.getenv("OPENAI_PRESCREEN_DELAY_SECONDS", "2")))
         try:
-            if prescreen_candidate(row, slug=row["slug"], profile_path=row["profile_path"]):
+            if prescreen_candidate(
+                row,
+                slug=row["slug"],
+                profile_path=row["profile_path"],
+                role_slug=role_slug,
+            ):
                 done += 1
         except Exception as exc:
             print(f"  Prescreen failed: {row['full_name']}: {exc}", flush=True)
@@ -303,6 +412,11 @@ def prescreen_all(rows: list[dict]) -> tuple[int, int]:
     still = sum(
         1
         for row in rows
-        if not profile_is_scored(profile_path_for_slug(full_name_to_resume_slug(row["full_name"])))
+        if not profile_is_scored(
+            profile_path_for_slug(
+                full_name_to_resume_slug(row["full_name"]),
+                role_slug=role_slug,
+            )
+        )
     )
     return done, still
