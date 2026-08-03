@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
 from supabase import Client
+
+logger = logging.getLogger(__name__)
 
 BODY_PREVIEW_MAX = 200
 
@@ -18,6 +21,8 @@ ACTIVITY_LABELS: dict[str, str] = {
     "r1_evaluation_saved": "R1 scorecard saved",
     "contact_updated": "Contact updated",
     "outreach_draft_generated": "Outreach draft (reference)",
+    "calendly_booked": "Calendly booked",
+    "calendly_canceled": "Calendly canceled",
 }
 
 
@@ -358,16 +363,31 @@ def load_outreach_log(
     if not by_id:
         return []
 
-    rows = (
-        sb.table("candidate_activities")
-        .select("*")
-        .in_("candidate_id", list(by_id.keys()))
-        .in_("activity_type", types)
-        .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-        .data
-    )
+    candidate_ids = list(by_id.keys())
+    rows: list[dict] = []
+    batch_size = 80
+    for start in range(0, len(candidate_ids), batch_size):
+        chunk = candidate_ids[start : start + batch_size]
+        try:
+            batch = (
+                sb.table("candidate_activities")
+                .select("*")
+                .in_("candidate_id", chunk)
+                .in_("activity_type", types)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+                .data
+            )
+            rows.extend(batch or [])
+        except Exception:
+            logger.exception(
+                "Failed loading outreach log activities for %d id(s)", len(chunk)
+            )
+            continue
+
+    rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    rows = rows[:limit]
 
     log: list[dict] = []
     for activity in rows:
@@ -423,18 +443,35 @@ def load_activities_by_candidate(
     candidate_ids: list[str],
     *,
     limit_per_candidate: int = 15,
+    batch_size: int = 80,
 ) -> dict[str, list[dict]]:
+    """Load recent activities, chunking IDs so PostgREST `.in_()` URLs stay under limits."""
     if not candidate_ids or not tracking_available(sb):
         return {}
-    rows = (
-        sb.table("candidate_activities")
-        .select("*")
-        .in_("candidate_id", candidate_ids)
-        .order("created_at", desc=True)
-        .execute()
-        .data
-    )
-    grouped: dict[str, list[dict]] = {cid: [] for cid in candidate_ids}
+
+    unique_ids = list(dict.fromkeys(candidate_ids))
+    grouped: dict[str, list[dict]] = {cid: [] for cid in unique_ids}
+    rows: list[dict] = []
+
+    for start in range(0, len(unique_ids), batch_size):
+        chunk = unique_ids[start : start + batch_size]
+        try:
+            batch = (
+                sb.table("candidate_activities")
+                .select("*")
+                .in_("candidate_id", chunk)
+                .order("created_at", desc=True)
+                .execute()
+                .data
+            )
+            rows.extend(batch or [])
+        except Exception:
+            # Don't take down Pipeline if one activities chunk fails.
+            logger.exception(
+                "Failed loading candidate_activities for %d id(s)", len(chunk)
+            )
+            continue
+
     for row in rows:
         cid = row["candidate_id"]
         if cid in grouped and len(grouped[cid]) < limit_per_candidate:
@@ -479,6 +516,11 @@ def format_activity_line(activity: dict, stage_labels: dict[str, str] | None = N
         detail = f"{payload.get('interviewer', '—')} · vote {payload.get('vote', '—')}"
     elif activity_type == "outreach_draft_generated":
         detail = "SMS + email saved for reference (not sent)"
+    elif activity_type == "calendly_booked":
+        start = str(payload.get("start_time") or "")[:16].replace("T", " ")
+        detail = start or payload.get("email") or ""
+    elif activity_type == "calendly_canceled":
+        detail = payload.get("email") or "booking cleared"
     else:
         detail = ""
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pandas as pd
 import streamlit as st
@@ -25,6 +25,14 @@ from lib.candidate_display import (
     personal_network_contact,
 )
 from lib.export_display import format_exported_display
+from lib.pipeline_scored_export import (
+    default_export_filename,
+    filter_candidates_for_scored_export,
+    list_export_batches_from_candidates,
+    list_local_export_batches,
+    scored_export_csv_bytes,
+    scored_export_rows,
+)
 from lib.candidate_activity import (
     apply_outreach_stage,
     format_activity_line,
@@ -38,6 +46,7 @@ from lib.candidate_activity import (
     tracking_available,
     update_pipeline_stage,
 )
+from lib.calendly_booking import format_booked_caption
 from lib.constants import (
     GATES,
     INTERVIEWERS,
@@ -125,7 +134,7 @@ PIPELINE_METRICS: list[dict] = [
     {
         "id": "round_1_scheduled",
         "label": "R1 scheduled",
-        "help": "Recruiter confirmed a phone screen is booked. Stage: Phone screen scheduled.",
+        "help": "Phone screen booked (Calendly or manual). Stage: Phone screen scheduled.",
     },
     {
         "id": "round_1_complete",
@@ -1118,6 +1127,9 @@ def _render_candidate_card_body(
         if c.get("phone"):
             st.write(f"**Phone:** {c['phone']}")
         st.write(f"**Stage:** {stage_labels.get(c['pipeline_stage'], c['pipeline_stage'])}")
+        booked = format_booked_caption(c.get("r1_scheduled_at"))
+        if booked:
+            st.caption(booked)
         st.caption(f"**Outreach:** {format_outreach_summary(c)}")
     with actions_col:
         if c.get("linkedin_url"):
@@ -1155,7 +1167,7 @@ def _render_candidate_card_body(
                 index=stage_index,
                 format_func=lambda key: stage_labels.get(key, key),
                 key=f"stage_{c['id']}",
-                help="Manual update — e.g. Outreached → Phone screen scheduled when they book.",
+                help="Manual update — Calendly bookings auto-set Phone screen scheduled + date.",
             )
             new_source = st.selectbox(
                 "Source",
@@ -1266,6 +1278,138 @@ filter_stage = st.multiselect(
     default=[],
     key="pipeline_filter_stage",
 )
+
+with st.expander("Download scored export", expanded=False):
+    st.caption(
+        "CSV with name, contact, market, score /100, recommendation, stage, "
+        "and ZipRecruiter export batch/date (Central Time). "
+        "Batch/date filters match the local export folders by email."
+    )
+    local_batches = list_local_export_batches()
+    export_batches = list_export_batches_from_candidates(candidates) or [
+        b["batch"] for b in local_batches
+    ]
+    batch_labels = {
+        b["batch"]: f"{b['created_display']} · {b['candidate_count']} · `{b['batch']}`"
+        for b in local_batches
+    }
+    filter_mode = st.radio(
+        "Filter by",
+        options=["Export batch", "Export date range", "All candidates"],
+        horizontal=True,
+        key="pipeline_scored_export_mode",
+    )
+    selected_batch: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+
+    if filter_mode == "Export batch":
+        if not export_batches:
+            st.warning(
+                "No ZipRecruiter export folders found under slack-zr-agent/exports."
+            )
+        else:
+            selected_batch = st.selectbox(
+                "Export batch",
+                options=export_batches,
+                format_func=lambda key: batch_labels.get(key, key),
+                key="pipeline_scored_export_batch",
+            )
+    elif filter_mode == "Export date range":
+        today = date.today()
+        dc1, dc2 = st.columns(2)
+        with dc1:
+            start_date = st.date_input(
+                "From (export date, CT)",
+                value=today,
+                key="pipeline_scored_export_start",
+            )
+        with dc2:
+            end_date = st.date_input(
+                "To (export date, CT)",
+                value=today,
+                key="pipeline_scored_export_end",
+            )
+        if start_date and end_date and start_date > end_date:
+            st.error("Start date must be on or before end date.")
+            start_date = None
+
+    scored_only = st.checkbox(
+        "Only include candidates with a resume score",
+        value=False,
+        key="pipeline_scored_export_scored_only",
+    )
+    respect_filters = st.checkbox(
+        "Also apply current Pipeline filters (contact / stage / metric)",
+        value=False,
+        key="pipeline_scored_export_respect_filters",
+    )
+
+    export_pool = candidates
+    if respect_filters:
+        export_pool = _filter_by_metric(candidates, active_metric, evals_by_candidate)
+        if filter_contact == "Contacted":
+            export_pool = [c for c in export_pool if is_contacted(c)]
+        elif filter_contact == "Not contacted":
+            export_pool = [c for c in export_pool if not is_contacted(c)]
+        if filter_stage:
+            export_pool = [c for c in export_pool if c["pipeline_stage"] in filter_stage]
+
+    if filter_mode == "All candidates":
+        export_candidates = filter_candidates_for_scored_export(
+            export_pool, scored_only=scored_only
+        )
+    elif filter_mode == "Export batch":
+        export_candidates = (
+            filter_candidates_for_scored_export(
+                export_pool,
+                export_batch=selected_batch,
+                scored_only=scored_only,
+            )
+            if selected_batch
+            else []
+        )
+    else:
+        export_candidates = (
+            filter_candidates_for_scored_export(
+                export_pool,
+                start_date=start_date,
+                end_date=end_date,
+                scored_only=scored_only,
+            )
+            if start_date and end_date
+            else []
+        )
+
+    scored_count = sum(
+        1 for c in export_candidates if parse_agent_score(c) is not None
+    )
+    st.write(
+        f"**{len(export_candidates)}** candidate(s) match · "
+        f"**{scored_count}** with scores"
+    )
+    if export_candidates:
+        preview_rows = scored_export_rows(
+            export_candidates[:8], stage_labels=stage_labels
+        )
+        st.dataframe(pd.DataFrame(preview_rows), use_container_width=True, hide_index=True)
+        csv_bytes = scored_export_csv_bytes(
+            scored_export_rows(export_candidates, stage_labels=stage_labels)
+        )
+        st.download_button(
+            "Download CSV with scores",
+            data=csv_bytes,
+            file_name=default_export_filename(
+                export_batch=selected_batch,
+                start_date=start_date,
+                end_date=end_date,
+            ),
+            mime="text/csv",
+            type="primary",
+            key="pipeline_scored_export_download",
+        )
+    else:
+        st.caption("No candidates match this export filter.")
 
 filtered = _filter_by_metric(
     candidates,

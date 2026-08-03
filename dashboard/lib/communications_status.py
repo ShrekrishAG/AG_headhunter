@@ -36,6 +36,17 @@ def integration_rows() -> list[dict]:
             "required_for": "SMS + email booking links",
         },
         {
+            "name": "Calendly booking webhook",
+            "key": "CALENDLY_WEBHOOK_SIGNING_KEY",
+            "configured": bool(get_config("CALENDLY_WEBHOOK_SIGNING_KEY")),
+            "detail": (
+                "Signing key set — run webhooks/calendly service"
+                if get_config("CALENDLY_WEBHOOK_SIGNING_KEY")
+                else "Optional — auto stage + booked date on Pipeline"
+            ),
+            "required_for": "Auto Phone screen scheduled when they book",
+        },
+        {
             "name": "Heymarket SMS" if heymarket_configured() else "Twilio SMS",
             "key": "HEYMARKET_*" if heymarket_configured() else "TWILIO_*",
             "configured": heymarket_configured() or twilio_configured(),
@@ -50,7 +61,12 @@ def integration_rows() -> list[dict]:
             "name": "SendGrid email",
             "key": "SENDGRID_*",
             "configured": sendgrid_configured(),
-            "detail": get_config("SENDGRID_FROM_EMAIL") or "Missing API key or from email",
+            "detail": (
+                f"From {get_config('SENDGRID_FROM_EMAIL') or '?'} · "
+                f"Reply-To {get_config('SENDGRID_REPLY_TO_EMAIL', 'brittaneyfola@roofally.com')}"
+                if sendgrid_configured()
+                else "Missing API key or from email"
+            ),
             "required_for": "Send email from Pipeline",
         },
     ]

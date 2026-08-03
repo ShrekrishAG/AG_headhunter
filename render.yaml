@@ -1,0 +1,29 @@
+# Render Blueprint — Calendly booking webhook for Accord Headhunter
+# Deploy: https://dashboard.render.com/blueprints → New Blueprint Instance → this repo
+# Docs: integrations/calendly-setup.md
+
+services:
+  - type: web
+    name: accord-calendly-webhook
+    runtime: python
+    plan: starter
+    region: oregon
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r webhooks/calendly/requirements.txt
+    startCommand: >-
+      cd webhooks/calendly &&
+      uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: CALENDLY_WEBHOOK_SIGNING_KEY
+        sync: false
+      # Set true only for temporary smoke tests — never in production
+      - key: CALENDLY_SKIP_SIGNATURE_VERIFY
+        value: "false"

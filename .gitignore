@@ -16,6 +16,7 @@ dashboard/.env
 dashboard/.venv/
 dashboard/__pycache__/
 dashboard/**/__pycache__/
+dashboard/data/
 .streamlit/secrets.toml
 dashboard/.streamlit/secrets.toml
 
@@ -27,3 +28,6 @@ slack-zr-agent/exports/
 slack-zr-agent/.review-sessions/
 slack-zr-agent/**/__pycache__/
 slack-zr-agent/**/*.pyc
+
+.auth-temp-password
+webhooks/calendly/.venv/
