@@ -6,8 +6,12 @@ import hashlib
 import hmac
 import json
 import re
+import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from urllib.parse import unquote
 
+import extra_streamlit_components as stx
 import streamlit as st
 
 from lib.app_config import get_config
@@ -15,11 +19,14 @@ from lib.constants import APP_NAME, LEGAL_NAME, LOGO_PATH
 
 AUTH_USER_KEY = "auth_user"
 AUTH_NAME_KEY = "auth_display_name"
+_AUTH_COOKIE_ACTION_KEY = "_auth_cookie_action"
+
+REMEMBER_COOKIE = "hh_remember"
+REMEMBER_DAYS = 30
 
 # pbkdf2$iterations$salt_hex$hash_hex
 _HASH_RE = re.compile(r"^pbkdf2\$(\d+)\$([0-9a-f]+)\$([0-9a-f]+)$", re.I)
 _PBKDF2_ITERATIONS = 260_000
-
 
 @dataclass(frozen=True)
 class AuthUser:
@@ -136,6 +143,97 @@ def load_auth_users() -> list[AuthUser]:
     return _parse_users_delimited(raw)
 
 
+def _auth_signing_key() -> bytes:
+    secret = (
+        get_config("HEADHUNTER_AUTH_SECRET")
+        or get_config("HEADHUNTER_USERS")
+        or "headhunter-dev-auth"
+    )
+    return hashlib.sha256(secret.encode("utf-8")).digest()
+
+
+def _make_remember_token(username: str, *, days: int = REMEMBER_DAYS) -> str:
+    exp = int(time.time()) + max(1, days) * 86_400
+    payload = f"{username.strip().lower()}:{exp}"
+    sig = hmac.new(_auth_signing_key(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{payload}:{sig}"
+
+
+def _parse_remember_token(token: str | None) -> str | None:
+    raw = unquote((token or "").strip())
+    if not raw:
+        return None
+    parts = raw.split(":")
+    if len(parts) != 3:
+        return None
+    username, exp_s, sig = parts
+    try:
+        exp = int(exp_s)
+    except ValueError:
+        return None
+    if exp < int(time.time()):
+        return None
+    payload = f"{username}:{exp}"
+    expected = hmac.new(
+        _auth_signing_key(), payload.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        return None
+    return username.strip().lower() or None
+
+
+def _cookie_manager() -> stx.CookieManager:
+    return stx.CookieManager(key="hh_auth_cookie_manager")
+
+
+def _read_remember_cookie(cm: stx.CookieManager) -> str | None:
+    token = cm.get(REMEMBER_COOKIE)
+    if not token:
+        try:
+            token = st.context.cookies.get(REMEMBER_COOKIE)
+        except Exception:
+            token = None
+    return _parse_remember_token(str(token) if token is not None else None)
+
+
+def _queue_remember_cookie(token: str | None, *, days: int = REMEMBER_DAYS) -> None:
+    st.session_state[_AUTH_COOKIE_ACTION_KEY] = {"token": token, "days": days}
+
+
+def _apply_remember_cookie_action(cm: stx.CookieManager) -> None:
+    action = st.session_state.pop(_AUTH_COOKIE_ACTION_KEY, None)
+    if not action:
+        return
+    token = action.get("token")
+    days = int(action.get("days") or REMEMBER_DAYS)
+    # Unique Streamlit keys so set/delete can run more than once per session
+    stamp = str(int(time.time() * 1000))
+    if token:
+        expires_at = datetime.now() + timedelta(days=max(1, days))
+        cm.set(
+            REMEMBER_COOKIE,
+            token,
+            key=f"hh_remember_set_{stamp}",
+            expires_at=expires_at,
+            same_site="lax",
+        )
+    else:
+        cm.delete(REMEMBER_COOKIE, key=f"hh_remember_del_{stamp}")
+
+
+def _restore_from_remember_cookie(cm: stx.CookieManager) -> bool:
+    username = _read_remember_cookie(cm)
+    if not username:
+        return False
+    for user in load_auth_users():
+        if user.username == username:
+            login_user(user.username, user.name)
+            return True
+    # Stale cookie for removed user
+    _queue_remember_cookie(None)
+    return False
+
+
 def is_authenticated() -> bool:
     return bool(st.session_state.get(AUTH_USER_KEY))
 
@@ -156,9 +254,12 @@ def login_user(username: str, display_name: str) -> None:
 def logout_user() -> None:
     st.session_state.pop(AUTH_USER_KEY, None)
     st.session_state.pop(AUTH_NAME_KEY, None)
+    _queue_remember_cookie(None)
 
 
-def try_login(username: str, password: str) -> tuple[bool, str]:
+def try_login(
+    username: str, password: str, *, remember_me: bool = False
+) -> tuple[bool, str]:
     users = load_auth_users()
     if not users:
         return False, "No users configured. Set HEADHUNTER_USERS in secrets / .env."
@@ -168,12 +269,19 @@ def try_login(username: str, password: str) -> tuple[bool, str]:
     for user in users:
         if user.username == key and verify_password(password, user):
             login_user(user.username, user.name)
+            if remember_me:
+                _queue_remember_cookie(_make_remember_token(user.username))
+            else:
+                _queue_remember_cookie(None)
             return True, ""
     return False, "Invalid email or password."
 
 
-def render_login_page() -> None:
+def render_login_page(cm: stx.CookieManager | None = None) -> None:
     """Full-page login; call st.stop() after this when unauthenticated."""
+    if cm is None:
+        cm = _cookie_manager()
+        _apply_remember_cookie_action(cm)
     col_l, col_m, col_r = st.columns([1, 1.2, 1])
     with col_m:
         if LOGO_PATH.exists():
@@ -198,9 +306,10 @@ def render_login_page() -> None:
             password = st.text_input(
                 "Password", type="password", autocomplete="current-password"
             )
+            remember_me = st.checkbox("Remember me for 30 days", value=False)
             submitted = st.form_submit_button("Sign in", type="primary", use_container_width=True)
         if submitted:
-            ok, err = try_login(username, password)
+            ok, err = try_login(username, password, remember_me=remember_me)
             if ok:
                 st.rerun()
             st.error(err)
@@ -213,9 +322,16 @@ def require_login() -> bool:
     """
     if not auth_enabled():
         return True
+
+    cm = _cookie_manager()
+    _apply_remember_cookie_action(cm)
+
     if is_authenticated():
         return True
-    render_login_page()
+    if _restore_from_remember_cookie(cm):
+        _apply_remember_cookie_action(cm)
+        return True
+    render_login_page(cm)
     return False
 
 

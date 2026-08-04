@@ -32,10 +32,10 @@ def _format_tpl(
 
 SMS_TEMPLATES = [
     DEFAULT_R1_SMS_TEMPLATE,
-    """Hi {FirstName} — Accord Group is hiring in {Market}. Your ZipRecruiter profile caught our eye for Project Sales Rep. No roofing background required. Book a quick phone screen: {apply_url}
+    """Hi {FirstName} — Accord Group is hiring in {Market}. Your ZipRecruiter profile caught our eye for Project Sales Rep. No roofing background required. Reply to book a quick phone screen.
 
 Reply STOP to opt out.""",
-    """{FirstName}, Accord Group recruiting here. Strong match for our Project Sales Rep role in {Market}. Training provided. Schedule a call: {apply_url}
+    """{FirstName}, Accord Group recruiting here. Strong match for our Project Sales Rep role in {Market}. Training provided. Reply to schedule a call.
 
 Reply STOP to opt out.""",
 ]
@@ -52,8 +52,7 @@ EMAIL_BODY_TEMPLATES = [
 
 Accord Group is hiring Project Sales Representatives in {Market}. Based on your ZipRecruiter resume, we'd like to invite you to a 30-minute phone screen.
 
-Book here:
-{apply_url}
+Reply to this email if you're interested — we'll send a scheduling link.
 
 Best,
 Brittaney

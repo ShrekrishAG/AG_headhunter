@@ -75,7 +75,7 @@ from lib.r1_email_invite import (
 )
 from lib.r1_invite import (
     DEFAULT_R1_SMS_TEMPLATE,
-    MESSAGE_PLACEHOLDERS,
+    PLACEHOLDER_GUIDE,
     build_r1_sms_body,
     calendly_configured,
     format_message_template,
@@ -93,7 +93,7 @@ BULK_EMAIL_BODY_KEY = "bulk_email_body"
 PIPELINE_METRIC_FILTER_KEY = "pipeline_metric_filter"
 BULK_TEMPLATE_VERSION_KEY = "bulk_template_version"
 # Bump when default SMS/email copy changes so the bulk editor picks up new templates.
-CURRENT_BULK_TEMPLATE_VERSION = "2026-07-07-accord-defaults"
+CURRENT_BULK_TEMPLATE_VERSION = "2026-08-04-no-apply-url"
 
 SAMPLE_PREVIEW_CANDIDATE = {
     "full_name": "Sample cand",
@@ -280,7 +280,7 @@ def _init_bulk_message_templates() -> None:
 
 
 def _placeholder_caption() -> str:
-    return "Placeholders: " + ", ".join(MESSAGE_PLACEHOLDERS)
+    return PLACEHOLDER_GUIDE
 
 
 def _personalize_preview(candidate: dict, template: str, calendly_url: str) -> str:
@@ -557,7 +557,6 @@ def _render_bulk_action_bar(visible_candidates: list[dict], stage_labels: dict) 
                 "SMS template",
                 key=BULK_SMS_TEMPLATE_KEY,
                 height=140,
-                help=placeholder_help,
             )
             st.caption(f"Preview for **{preview_label}**:")
             st.text(
@@ -610,13 +609,11 @@ def _render_bulk_action_bar(visible_candidates: list[dict], stage_labels: dict) 
             st.text_input(
                 "Email subject",
                 key=BULK_EMAIL_SUBJECT_KEY,
-                help=placeholder_help,
             )
             st.text_area(
                 "Email body",
                 key=BULK_EMAIL_BODY_KEY,
                 height=320,
-                help=placeholder_help,
             )
             st.caption(f"Preview for **{preview_label}**:")
             st.markdown(

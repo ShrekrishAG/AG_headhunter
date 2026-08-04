@@ -8,20 +8,19 @@ from lib.app_config import get_config
 from lib.outreach_market import outreach_market_label
 from lib.phone_utils import normalize_phone_us
 
-DEFAULT_R1_SMS_TEMPLATE = """Hi {FirstName} — Accord Group is hiring Project Sales Reps in {Market}. Your ZipRecruiter profile matched our search. No roofing exp needed. Book a phone screen and learn more: {apply_url}
+DEFAULT_R1_SMS_TEMPLATE = """Hi {FirstName} — Accord Group is hiring Project Sales Reps in {Market}. Your ZipRecruiter profile matched our search. No roofing exp needed. Reply to book a phone screen.
 
 Reply STOP to opt out."""
 
 MESSAGE_PLACEHOLDERS = (
     "{FirstName}",
-    "{first_name}",
     "{Market}",
-    "{market}",
-    "{apply_url}",
-    "{calendly_url}",
     "{full_name}",
     "{role}",
 )
+
+# Shown once above Pipeline bulk message editors
+PLACEHOLDER_GUIDE = "Placeholders: {FirstName}, {Market}, {full_name}, {role}"
 
 
 def first_name(full_name: str) -> str:

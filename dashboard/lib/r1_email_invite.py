@@ -20,9 +20,7 @@ A few things candidates like about this role:
 • Licensed, insured employer (Inc. 5000 company)
 • Meaningful work helping families recover after storms
 
-Please book a phone screen with us if interested:
-{apply_url}
-
+Reply to this email if you'd like to book a phone screen — we'll send a scheduling link.
 
 Best,
 Brittaney
