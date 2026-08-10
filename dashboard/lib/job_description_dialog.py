@@ -53,7 +53,8 @@ def open_job_description_dialog(role_slug: str) -> None:
 
     st.info(
         "The **resume pre-screen agent** reads this file (`roles/…/brief.md`) plus "
-        "`scorecard.md` (100-point rubric) and `sample-walkthrough.md` when scoring candidates. "
+        "`scorecard.md` (100-point rubric), `sample-walkthrough.md`, and "
+        "`search-instructions.md` (when present) when scoring candidates. "
         "Editing here updates future pre-screens; already-scored profiles are unchanged until re-run."
     )
 

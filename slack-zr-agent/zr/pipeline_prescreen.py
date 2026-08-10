@@ -112,15 +112,25 @@ def score_candidate_profile(
     scorecard = _load_role_text(role, "scorecard.md")
     brief = _load_role_text(role, "brief.md")
     sample = _load_role_text(role, "sample-walkthrough.md")
+    search_instructions = _load_role_text(role, "search-instructions.md")
     category_labels = [str(cat["label"]) for cat in role.rubric_categories]
+
+    search_block = ""
+    if search_instructions.strip():
+        search_block = f"""
+## Search / filter instructions (titles, industries, keywords)
+{search_instructions[:5000]}
+"""
 
     prompt = f"""You are the Accord Group recruiting agent. Score this candidate for **{role.title}** using the 100-point resume rubric.
 
 You only have ZipRecruiter profile text (headline + work experience). Contact info may be hidden — score from visible career evidence only.
 
+When judging fit, apply the search/filter instructions: prefer matching **titles**, **industries**, and **behavioral keywords**; de-prioritize profiles that match the avoid list. Experience bar is **3+ years** of sales/sales management — more years is fine; do not use a 5-year ceiling.
+
 ## Role brief
 {brief[:4000]}
-
+{search_block}
 ## Scorecard rubric
 {scorecard[:8000]}
 

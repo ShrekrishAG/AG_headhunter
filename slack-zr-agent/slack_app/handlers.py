@@ -18,6 +18,7 @@ from slack_app.messages import (
     EXPORT_AFTER_UNLOCK_ACTION,
     EXPORT_CANDIDATES_ACTION,
     EXPORT_MODAL_CALLBACK,
+    EXPORT_REVIEW_LIST_ACTION,
     REFRESH_PROJECTS_ACTION,
     REVIEW_CANDIDATES_ACTION,
     REVIEW_MODAL_CALLBACK,
@@ -32,6 +33,7 @@ from slack_app.messages import (
 from zr.browser import ZipRecruiterSessionError
 from zr.config import (
     ALLOWED_SLACK_USER_ID,
+    BASE_DIR,
     SLACK_APP_TOKEN,
     SLACK_BOT_TOKEN,
     SLACK_NOTIFY_USER_ID,
@@ -42,7 +44,9 @@ from zr.export_options import ExportOptions, parse_export_options, parse_slack_m
 from zr.headhunter_pipeline import format_pipeline_slack_message, run_post_export_pipeline
 from zr.pipeline_review import (
     PipelineReviewResult,
+    build_review_list_csv,
     format_review_for_slack,
+    format_review_list_for_slack,
     run_pipeline_review,
     unlock_review_top,
 )
@@ -53,6 +57,7 @@ from zr.review_options import (
     parse_slack_review_modal_values,
 )
 from zr.review_sessions import create_session, drop_session, get_session, update_session
+from zr.role_config import get_role
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +173,65 @@ async def _run_pipeline_review_flow(
             thread_ts=thread_ts,
             text=f"Unexpected error during pipeline review:\n```{error}```",
         )
+
+
+async def _run_export_review_list(
+    client: AsyncWebClient,
+    session_id: str,
+    *,
+    channel: str,
+    thread_ts: str | None,
+) -> None:
+    """Post qualified review picks as a Slack message + CSV. No unlock, no DB write."""
+    session = get_session(session_id)
+    if not session:
+        await client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            text="Review session expired. Run `/zr-review` again.",
+        )
+        return
+
+    role_title = get_role(session.role_slug).title
+    message = format_review_list_for_slack(session.slices, role_title=role_title)
+    # Slack section text limit is ~3000 chars
+    preview = message if len(message) <= 2800 else message[:2750] + "\n…_(truncated — see CSV)_"
+
+    await client.chat_postMessage(
+        channel=channel,
+        thread_ts=thread_ts or session.thread_ts,
+        text=preview,
+    )
+
+    csv_text = build_review_list_csv(session.slices)
+    tmp_dir = Path(BASE_DIR) / ".tmp-review-lists"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = tmp_dir / f"review-list-{session_id}.csv"
+    csv_path.write_text(csv_text, encoding="utf-8")
+
+    try:
+        await client.files_upload_v2(
+            channel=channel,
+            thread_ts=thread_ts or session.thread_ts,
+            file=str(csv_path),
+            title="review_qualified_list.csv",
+            initial_comment=(
+                "CSV list from this review (no unlock, not synced to the dashboard). "
+                "You can still unlock above if you want."
+            ),
+        )
+    except Exception:
+        logger.exception("Failed to upload review list CSV")
+        await client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts or session.thread_ts,
+            text="Could not upload the CSV; the list is in the message above.",
+        )
+    finally:
+        try:
+            csv_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 async def _run_unlock_for_session(
@@ -601,6 +665,51 @@ async def handle_direct_message(event, client, logger):
     await _run_project_fetch(client, event["channel"])
 
 
+async def _populate_review_modal_projects(
+    client: AsyncWebClient,
+    *,
+    view_id: str,
+    metadata: str,
+) -> None:
+    try:
+        result = await fetch_projects()
+        projects = sorted(
+            [p for p in result.projects if p.project_id or (p.name or "").strip()],
+            key=lambda p: (p.name or "").lower(),
+        )
+        modal = review_candidates_modal(projects=projects)
+        modal["private_metadata"] = metadata
+        await client.views_update(view_id=view_id, view=modal)
+    except Exception as error:
+        logger.exception("Failed to load projects for review modal")
+        modal = review_candidates_modal(projects=[], projects_error=str(error))
+        modal["private_metadata"] = metadata
+        try:
+            await client.views_update(view_id=view_id, view=modal)
+        except Exception:
+            logger.exception("Failed to show review modal project error")
+
+
+async def _open_review_modal(
+    client: AsyncWebClient,
+    *,
+    trigger_id: str,
+    channel: str,
+    thread_ts: str | None,
+) -> None:
+    metadata = json.dumps({"channel": channel, "thread_ts": thread_ts})
+    modal = review_candidates_modal(projects=None)
+    modal["private_metadata"] = metadata
+    response = await client.views_open(trigger_id=trigger_id, view=modal)
+    view_id = (response.get("view") or {}).get("id")
+    if not view_id:
+        logger.error("views_open did not return a view id for review modal")
+        return
+    asyncio.create_task(
+        _populate_review_modal_projects(client, view_id=view_id, metadata=metadata)
+    )
+
+
 @app.command("/zr-review")
 async def handle_zr_review(ack, command, client):
     await ack()
@@ -618,12 +727,11 @@ async def handle_zr_review(ack, command, client):
 
     command_text = (command.get("text") or "").strip()
     if not command_text:
-        metadata = json.dumps({"channel": channel_id, "thread_ts": None})
-        modal = review_candidates_modal()
-        modal["private_metadata"] = metadata
-        await client.views_open(
+        await _open_review_modal(
+            client,
             trigger_id=command["trigger_id"],
-            view=modal,
+            channel=channel_id,
+            thread_ts=None,
         )
         return
 
@@ -756,6 +864,36 @@ async def handle_approve_unlock(ack, body, client):
         return
 
     asyncio.create_task(_run_unlock_for_session(client, session_id))
+
+
+@app.action(EXPORT_REVIEW_LIST_ACTION)
+async def handle_export_review_list(ack, body, client):
+    await ack()
+
+    user_id = body.get("user", {}).get("id")
+    channel = body["channel"]["id"]
+    message_ts = body.get("message", {}).get("ts")
+    session_id = body.get("actions", [{}])[0].get("value", "")
+
+    if not _is_authorized(user_id):
+        await client.chat_postEphemeral(
+            channel=channel,
+            user=user_id,
+            text="You are not authorized to export review lists.",
+        )
+        return
+
+    if not session_id:
+        return
+
+    asyncio.create_task(
+        _run_export_review_list(
+            client,
+            session_id,
+            channel=channel,
+            thread_ts=message_ts,
+        )
+    )
 
 
 @app.action(DECLINE_UNLOCK_ACTION)
@@ -894,26 +1032,43 @@ async def handle_review_candidates(ack, body, client):
         return
 
     thread_ts = body.get("message", {}).get("ts")
-    metadata = json.dumps({"channel": channel, "thread_ts": thread_ts})
-
-    modal = review_candidates_modal()
-    modal["private_metadata"] = metadata
-
-    await client.views_open(
+    await _open_review_modal(
+        client,
         trigger_id=body["trigger_id"],
-        view=modal,
+        channel=channel,
+        thread_ts=thread_ts,
     )
 
 
 @app.view(REVIEW_MODAL_CALLBACK)
 async def handle_review_modal_submission(ack, body, client, view):
-    await ack()
-
     user_id = body.get("user", {}).get("id")
     if not _is_authorized(user_id):
+        await ack()
         return
 
-    options = parse_slack_review_modal_values(view.get("state", {}).get("values", {}))
+    values = view.get("state", {}).get("values", {})
+    if "projects_block" not in values:
+        await ack(
+            response_action="errors",
+            errors={
+                "role_block": (
+                    "Projects are still loading (or failed to load). "
+                    "Wait for the project list, then submit again."
+                )
+            },
+        )
+        return
+
+    options = parse_slack_review_modal_values(values)
+    if not options.selected_project_ids:
+        await ack(
+            response_action="errors",
+            errors={"projects_block": "Select at least one project to review."},
+        )
+        return
+
+    await ack()
 
     metadata_raw = body.get("view", {}).get("private_metadata") or "{}"
     try:

@@ -153,6 +153,8 @@ Score locked candidates using visible profile text (work experience), then confi
 
 **Form (recommended):** run `/zr-review` with no arguments, or click **Review locked pipeline** after listing projects. Set:
 
+- **Position** — scoring rubric (PSR / GM / VP)
+- **Projects to review** — multi-select of active ZipRecruiter projects
 - **Unlock top N per project** — e.g. `10` unlocks the top 10 from each project
 - **Review pool per project** — how many locked profiles to score first (default 25)
 - **Per-project overrides** — e.g. `TGC St Louis=10` on its own line
@@ -170,8 +172,11 @@ Flow:
 1. Opens the project **Sourcing** tab (`/emp/rdb/project/{id}/sourcing`) and reviews up to `PIPELINE_REVIEW_POOL` locked profiles (default 25)
 2. AI-scores each against the Accord resume rubric (`OPENAI_API_KEY` from `.env` or `dashboard/.env`)
 3. Posts top N with scores in Slack
-4. **Yes, unlock N** → clicks Connect on ZipRecruiter (N credits)
-5. **Export & sync** → CSV + resumes + post-export pipeline (import, prescreen, reference drafts)
+4. Choose one:
+   - **Yes, unlock N** → clicks Connect on ZipRecruiter (N credits)
+   - **Export list (no unlock)** → Slack message + CSV of qualified names, scores, and recent experience (no credits, nothing written to the dashboard). You can still unlock afterward.
+   - **No, skip unlock** → discard without unlocking
+5. After unlock: **Export & sync** → CSV + resumes + post-export pipeline (import, prescreen, reference drafts)
 
 Requires `ACCORD_HEADHUNTER_DIR` pointing at the monorepo root. Set `PIPELINE_REVIEW_POOL=25` in `.env` to change how many locked profiles are scored.
 

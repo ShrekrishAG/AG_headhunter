@@ -247,6 +247,138 @@ def format_review_for_slack(result: PipelineReviewResult) -> str:
             f"Qualified in unlock set: *{qualified_total}*",
             f"Unlock {unlock_count} candidate(s)? "
             f"(*{unlock_count} credit(s)* — confirm below)",
+            "Or *Export list (no unlock)* for names / scores / recent experience only "
+            "(no credits, nothing saved to the dashboard).",
         ]
     )
     return "\n".join(lines)
+
+
+def recent_experience_line(candidate: LockedCandidate, *, max_len: int = 180) -> str:
+    """Best-effort most recent job line from locked profile text."""
+    for line in (candidate.profile_text or "").splitlines():
+        cleaned = " ".join(line.split()).strip()
+        if not cleaned:
+            continue
+        lower = cleaned.lower()
+        if lower.startswith(("headline:", "location:", "skills:")):
+            continue
+        if len(cleaned) > max_len:
+            return cleaned[: max_len - 1].rstrip() + "…"
+        return cleaned
+    headline = " ".join((candidate.headline or "").split()).strip()
+    if headline:
+        return headline[:max_len]
+    return ""
+
+
+def iter_review_list_rows(
+    result: PipelineReviewResult | list[ProjectReviewSlice],
+) -> tuple[list[tuple[Project, LockedCandidate]], bool]:
+    """
+    Rows for the no-unlock list export.
+
+    Prefer AI-qualified candidates across the review pool; if none qualify,
+    fall back to the top unlock picks.
+    """
+    slices = result.slices if isinstance(result, PipelineReviewResult) else result
+    qualified: list[tuple[Project, LockedCandidate]] = []
+    for slice_ in slices:
+        for candidate in slice_.ranked:
+            if candidate.qualifies:
+                qualified.append((slice_.project, candidate))
+    if qualified:
+        return qualified, True
+
+    fallback: list[tuple[Project, LockedCandidate]] = []
+    for slice_ in slices:
+        for candidate in slice_.top_candidates:
+            fallback.append((slice_.project, candidate))
+    return fallback, False
+
+
+def format_review_list_for_slack(
+    result: PipelineReviewResult | list[ProjectReviewSlice],
+    *,
+    role_title: str | None = None,
+) -> str:
+    rows, used_qualified = iter_review_list_rows(result)
+    lines: list[str] = [
+        "*Review list (no unlock)*",
+        "_Names + scores only — no credits spent, nothing written to the dashboard._",
+        "",
+    ]
+    if role_title:
+        lines.append(f"*Role:* {role_title}")
+    if used_qualified:
+        lines.append(f"*AI-qualified:* {len(rows)} candidate(s)")
+    else:
+        lines.append(
+            f"*No AI-qualified profiles* — showing top unlock picks instead "
+            f"({len(rows)} candidate(s))"
+        )
+    lines.append("")
+
+    current_project = None
+    for index, (project, candidate) in enumerate(rows, start=1):
+        if project.name != current_project:
+            current_project = project.name
+            lines.append(f"*{project.name}*")
+        score = candidate.total_score if candidate.total_score is not None else "—"
+        emoji = recommendation_emoji(candidate.recommendation)
+        exp = recent_experience_line(candidate)
+        lines.append(
+            f"{index}. *{candidate.name}* — {score}/100 {emoji} "
+            f"{candidate.recommendation or '—'}"
+        )
+        if exp:
+            lines.append(f"     _{exp}_")
+        elif candidate.summary:
+            summary = candidate.summary.strip()
+            if len(summary) > 120:
+                summary = summary[:117] + "..."
+            lines.append(f"     _{summary}_")
+
+    if not rows:
+        lines.append("_No candidates to list._")
+    return "\n".join(lines)
+
+
+def build_review_list_csv(
+    result: PipelineReviewResult | list[ProjectReviewSlice],
+) -> str:
+    import csv
+    import io
+
+    rows, used_qualified = iter_review_list_rows(result)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "project",
+            "name",
+            "score",
+            "recommendation",
+            "qualifies",
+            "headline",
+            "location",
+            "recent_experience",
+            "list_basis",
+        ]
+    )
+    basis = "ai_qualified" if used_qualified else "top_unlock_picks"
+    for project, candidate in rows:
+        writer.writerow(
+            [
+                project.name,
+                candidate.name,
+                candidate.total_score if candidate.total_score is not None else "",
+                candidate.recommendation or "",
+                "yes" if candidate.qualifies else "no",
+                candidate.headline or "",
+                candidate.location or "",
+                recent_experience_line(candidate, max_len=300),
+                basis,
+            ]
+        )
+    return buf.getvalue()

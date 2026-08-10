@@ -33,12 +33,12 @@ You run your own location while being mentored toward multi-unit leadership. Hig
 
 ## Qualifications
 
-- 3–5 years of sales and/or sales management experience preferred  
-- Proven track record recruiting, hiring, training, leading, and developing a direct sales team  
-- Ability to lead in a high-pressure, fast-paced, results-driven environment  
-- Intermediate computer skills; web/mobile apps; CRM preferred  
-- Open to travel (heavy local; possible extended stays)  
-- Physical / field capability: ladders, roof inspections, lifting construction materials as needed  
+- **3+ years** of sales and/or sales management experience (minimum bar — more years is fine; do **not** treat 5 years as a ceiling or preference band)
+- Proven track record recruiting, hiring, training, leading, and developing a direct sales team
+- Ability to lead in a high-pressure, fast-paced, results-driven environment
+- Intermediate computer skills; web/mobile apps; CRM preferred
+- Open to travel (heavy local; possible extended stays)
+- Physical / field capability: ladders, roof inspections, lifting construction materials as needed
 
 ## Benefits
 

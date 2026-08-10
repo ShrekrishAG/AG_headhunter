@@ -34,6 +34,13 @@ def _role_paths(role_slug: str) -> tuple[Path, Path, Path, Path]:
     return candidates_dir, scorecard, brief, sample
 
 
+def _role_search_instructions(role_slug: str) -> str:
+    path = REPO_ROOT / "roles" / role_slug / "search-instructions.md"
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    return ""
+
+
 # Defaults keep sales-rep scripts working.
 CANDIDATES_DIR, SCORECARD_PATH, BRIEF_PATH, SAMPLE_PATH = _role_paths(ROLE_SLUG)
 
@@ -92,6 +99,7 @@ def _llm_prescreen(
     brief_text: str,
     sample_text: str,
     role_slug: str = ROLE_SLUG,
+    search_instructions_text: str = "",
 ) -> dict[str, Any]:
     from lib.llm_client import chat_completion, llm_configured
 
@@ -101,13 +109,26 @@ def _llm_prescreen(
     categories = rubric_categories_for_slug(role_slug)
     category_labels = [c["label"] for c in categories]
     role_title = role_title_for_slug(role_slug)
+    search_block = ""
+    if (search_instructions_text or "").strip():
+        search_block = f"""
+## Search / filter instructions (titles, industries, keywords)
+{search_instructions_text[:5000]}
+"""
+    experience_rule = ""
+    if role_slug == "general-manager":
+        experience_rule = (
+            "- Experience bar is **3+ years** of sales/sales management. "
+            "More years is fine — do **not** use a 5-year ceiling or 3–5 preference band.\n"
+        )
     prompt = f"""You are the Accord Group recruiting agent. Score this {role_title} candidate using the 100-point resume rubric.
 
 Score ONLY from resume evidence. Follow the sample walkthrough style.
+When judging fit, apply the search/filter instructions (if provided): prefer matching titles, industries, and behavioral keywords; de-prioritize the avoid list.
 
 ## Role brief
 {brief_text[:4000]}
-
+{search_block}
 ## Scorecard rubric
 {scorecard_text[:8000]}
 
@@ -147,7 +168,7 @@ Rules:
 - red_flag_deduction is subtracted from subtotal (max {RED_FLAG_MAX_DEDUCTION}).
 - Do not invent experience not on the resume.
 - Use IdealTraits must-haves for gates when inferable.
-- Return valid JSON only — no markdown code fences.
+{experience_rule}- Return valid JSON only — no markdown code fences.
 """
 
     raw = chat_completion(prompt=prompt, max_tokens=2500, json_mode=True)
@@ -285,6 +306,7 @@ def prescreen_candidate(
     scorecard = scorecard_path.read_text(encoding="utf-8") if scorecard_path.exists() else ""
     brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else ""
     sample = sample_path.read_text(encoding="utf-8") if sample_path.exists() else ""
+    search_instructions = _role_search_instructions(role_slug)
 
     score_data = _llm_prescreen(
         resume_text=resume_text,
@@ -293,6 +315,7 @@ def prescreen_candidate(
         brief_text=brief,
         sample_text=sample,
         role_slug=role_slug,
+        search_instructions_text=search_instructions,
     )
     profile_path.parent.mkdir(parents=True, exist_ok=True)
     profile_path.write_text(
@@ -352,6 +375,7 @@ def prescreen_candidate_from_text(
     scorecard = scorecard_path.read_text(encoding="utf-8") if scorecard_path.exists() else ""
     brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else ""
     sample = sample_path.read_text(encoding="utf-8") if sample_path.exists() else ""
+    search_instructions = _role_search_instructions(role_slug)
 
     labeled = (
         f"[Evidence source: {text_source}]\n\n{source_text.strip()}"
@@ -363,6 +387,7 @@ def prescreen_candidate_from_text(
         brief_text=brief,
         sample_text=sample,
         role_slug=role_slug,
+        search_instructions_text=search_instructions,
     )
     profile_path.parent.mkdir(parents=True, exist_ok=True)
     profile_path.write_text(

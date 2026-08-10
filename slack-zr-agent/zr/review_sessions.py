@@ -100,6 +100,9 @@ def _candidate_to_payload(candidate: LockedCandidate) -> dict[str, Any]:
     return {
         "name": candidate.name,
         "pipeline_index": candidate.pipeline_index,
+        "profile_text": candidate.profile_text,
+        "headline": candidate.headline,
+        "location": candidate.location,
         "total_score": candidate.total_score,
         "recommendation": candidate.recommendation,
         "summary": candidate.summary,
@@ -112,6 +115,9 @@ def _candidate_from_payload(payload: dict[str, Any]) -> LockedCandidate:
     return LockedCandidate(
         name=str(payload.get("name") or "Candidate"),
         pipeline_index=int(payload.get("pipeline_index") or 1),
+        profile_text=str(payload.get("profile_text") or ""),
+        headline=str(payload.get("headline") or ""),
+        location=str(payload.get("location") or ""),
         total_score=payload.get("total_score"),
         recommendation=payload.get("recommendation"),
         summary=payload.get("summary"),

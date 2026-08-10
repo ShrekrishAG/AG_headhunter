@@ -11,7 +11,7 @@
 
 | Criteria | Points |
 |----------|--------|
-| 3+ years sales and/or sales management (home services, roofing, construction, field sales preferred) | 10 |
+| **3+ years** sales and/or sales management (home services, roofing, construction, field sales preferred). More than 5 years is fine — do **not** prefer or require a 5-year band. | 10 |
 | Evidence of meeting or exceeding team or personal revenue / sales goals | 8 |
 | Territory, pipeline, or book-of-business ownership with measurable outcomes | 7 |
 
@@ -109,3 +109,5 @@ Do **not** deduct for missing IdealTraits assessment / video answers — those a
 - Prefer **location / branch / team** evidence over pure corporate staff roles.  
 - Roofing / home services / storm restoration / construction sales management is a plus, not a hard requirement if leadership evidence is strong.  
 - Physical / ladder requirements are job conditions — do not score them from the resume unless relevant experience is present.
+- **Experience bar:** award the tenure points for clear **3+ years** of sales / sales management. Do **not** use a 3–5 year window or mark someone down for having more than 5 years.
+- Use `search-instructions.md` for industry / title / keyword signals: prioritize player-coach builders from direct-sales / home-services industries; de-prioritize inside sales, retail management, customer service, and corporate admin careers.

@@ -1266,6 +1266,13 @@ if active_metric and active_metric != "total":
 
 st.divider()
 
+filter_name = st.text_input(
+    "Search by name",
+    value="",
+    placeholder="Type a candidate name…",
+    key="pipeline_filter_name",
+)
+
 filter_contact = st.radio(
     "Contact status",
     options=["All", "Contacted", "Not contacted"],
@@ -1451,6 +1458,13 @@ filtered = _filter_by_metric(
     active_metric,
     evals_by_candidate,
 )
+name_query = (filter_name or "").strip().lower()
+if name_query:
+    filtered = [
+        c
+        for c in filtered
+        if name_query in (c.get("full_name") or "").lower()
+    ]
 if filter_export_batch and filter_export_batch != "All":
     filtered = filter_candidates_by_export_batch(
         filtered, export_batch=filter_export_batch

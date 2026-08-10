@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 
@@ -22,6 +23,26 @@ PER_PROJECT_RE = re.compile(
 PROJECT_LIMIT_RE = re.compile(r"([^=,\n]+?)\s*=\s*(\d+)")
 
 
+def project_option_value(project: Project) -> str:
+    """Stable id used in Slack multi-select option values."""
+    if project.project_id:
+        value = project.project_id.strip()
+        return value if len(value) <= 75 else value[:74] + "…"
+    digest = hashlib.sha1(project.name.strip().lower().encode("utf-8")).hexdigest()[:20]
+    return f"nh:{digest}"
+
+
+def project_matches_option_value(project: Project, value: str) -> bool:
+    value = (value or "").strip()
+    if not value:
+        return False
+    if project.project_id:
+        pid = project.project_id.strip()
+        if pid == value or pid.startswith(value.rstrip("…")):
+            return True
+    return value == project_option_value(project)
+
+
 @dataclass
 class ReviewOptions:
     unlock_top_n: int = 5
@@ -31,6 +52,9 @@ class ReviewOptions:
     default_review_pool: int | None = None
     project_unlock_limits: dict[str, int] = field(default_factory=dict)
     project_review_pools: dict[str, int] = field(default_factory=dict)
+    # When set (modal project multi-select), only these projects are reviewed.
+    # Values are ZR project ids and/or "name:<lowered name>" keys.
+    selected_project_ids: set[str] = field(default_factory=set)
     role_slug: str = field(default_factory=default_role_slug)
     role_explicit: bool = False
 
@@ -42,6 +66,14 @@ class ReviewOptions:
         return bool(
             self.default_unlock_per_project is not None
             or self.project_unlock_limits
+            or self.selected_project_ids
+        )
+
+    def _project_selected(self, project: Project) -> bool:
+        if not self.selected_project_ids:
+            return True
+        return any(
+            project_matches_option_value(project, key) for key in self.selected_project_ids
         )
 
     def _lookup_limit(
@@ -102,7 +134,14 @@ class ReviewOptions:
         if not self.matches_project_query(project):
             return False
 
+        if not self._project_selected(project):
+            return False
+
         if not self.is_multi_project:
+            return True
+
+        # Explicit project multi-select from the Slack form
+        if self.selected_project_ids:
             return True
 
         if self.default_unlock_per_project is not None:
@@ -119,13 +158,16 @@ class ReviewOptions:
 
     def summary_line(self) -> str:
         if self.is_multi_project:
+            selected = ""
+            if self.selected_project_ids:
+                selected = f", *{len(self.selected_project_ids)}* project(s) selected"
             if self.project_unlock_limits and self.default_unlock_per_project is not None:
                 return (
                     f"Unlock top *{self.default_unlock_per_project}* per project "
                     f"(review pool *{self.default_review_pool or self.review_pool}*, "
-                    f"{len(self.project_unlock_limits)} override(s))"
+                    f"{len(self.project_unlock_limits)} override(s){selected})"
                 )
-            if self.project_unlock_limits:
+            if self.project_unlock_limits and not self.selected_project_ids:
                 parts = [
                     f"{name}={count}" for name, count in self.project_unlock_limits.items()
                 ]
@@ -133,7 +175,14 @@ class ReviewOptions:
             if self.default_unlock_per_project is not None:
                 return (
                     f"Unlock top *{self.default_unlock_per_project}* per project "
-                    f"(review pool *{self.default_review_pool or self.review_pool}*)"
+                    f"(review pool *{self.default_review_pool or self.review_pool}*"
+                    f"{selected})"
+                )
+            if self.selected_project_ids:
+                return (
+                    f"Review *{len(self.selected_project_ids)}* selected project(s) "
+                    f"(unlock top *{self.unlock_top_n}*, "
+                    f"pool *{self.default_review_pool or self.review_pool}*)"
                 )
 
         parts = [
@@ -211,6 +260,14 @@ def parse_slack_review_modal_values(values: dict) -> ReviewOptions:
     if role_value:
         options.role_slug = role_value
         options.role_explicit = True
+
+    projects_block = values.get("projects_block", {})
+    projects_select = projects_block.get("project_ids", {})
+    selected_options = projects_select.get("selected_options") or []
+    for opt in selected_options:
+        value = (opt.get("value") or "").strip()
+        if value:
+            options.selected_project_ids.add(value)
 
     unlock_block = values.get("default_unlock_block", {})
     unlock_input = unlock_block.get("default_unlock", {})
