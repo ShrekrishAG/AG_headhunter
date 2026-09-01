@@ -18,7 +18,12 @@ from lib.app_config import get_config
 from lib.communications_status import outbound_sends_enabled
 from lib.constants import DASHBOARD_ROOT
 from lib.email_utils import normalize_email
-from lib.manager_markets import MarketManagers, configured_projects, resolve_market
+from lib.manager_markets import (
+    MarketManagers,
+    configured_projects,
+    market_active_recipients,
+    resolve_market,
+)
 from lib.r1_email_invite import sendgrid_configured
 
 EXPORTS_ROOT = DASHBOARD_ROOT.parent / "slack-zr-agent" / "exports"
@@ -280,7 +285,7 @@ def build_assignment_preview(
         market = resolve_market(project_name)
         if market is None:
             continue
-        recipients = list(market.active_managers)
+        recipients = list(market_active_recipients(market))
         manager_emails = [recipient.email for recipient in recipients]
         manager_limits = {
             recipient.email: recipient.candidate_limit for recipient in recipients

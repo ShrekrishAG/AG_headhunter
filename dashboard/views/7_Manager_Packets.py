@@ -10,7 +10,11 @@ import streamlit as st
 
 from lib.communications_status import outbound_sends_enabled
 from lib.constants import APP_NAME, DASHBOARD_ROOT, get_selected_role_title
-from lib.manager_markets import load_market_managers
+from lib.manager_markets import (
+    load_market_managers,
+    market_active_recipients,
+    market_recipients,
+)
 from lib.manager_packets import (
     AssignmentPreview,
     REQUIRED_PACKET_COPY_EMAILS,
@@ -65,9 +69,9 @@ with st.expander("Configured markets & GMs", expanded=False):
                         if manager.candidate_limit
                         else ""
                     )
-                    for manager in market.managers
+                    for manager in market_recipients(market)
                 ),
-                "Active GMs": len(market.active_managers),
+                "Active GMs": len(market_active_recipients(market)),
             }
         )
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)

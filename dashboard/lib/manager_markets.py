@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -33,10 +32,24 @@ class MarketManagers:
 
     @property
     def active_managers(self) -> tuple[ManagerRecipient, ...]:
-        return tuple(manager for manager in self.managers if manager.enabled)
+        return market_active_recipients(self)
 
 
-@lru_cache(maxsize=1)
+def market_recipients(market: MarketManagers) -> tuple[ManagerRecipient, ...]:
+    """All managers for a market, including disabled entries."""
+    stored = getattr(market, "managers", None)
+    if stored is not None:
+        return stored
+    legacy = getattr(market, "manager_emails", None)
+    if legacy is not None:
+        return tuple(ManagerRecipient(email=email) for email in legacy)
+    return ()
+
+
+def market_active_recipients(market: MarketManagers) -> tuple[ManagerRecipient, ...]:
+    return tuple(recipient for recipient in market_recipients(market) if recipient.enabled)
+
+
 def load_market_managers(config_path: Path | None = None) -> list[MarketManagers]:
     path = config_path or CONFIG_PATH
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
