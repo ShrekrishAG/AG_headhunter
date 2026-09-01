@@ -16,6 +16,7 @@ from lib.manager_markets import (
     market_recipients,
 )
 from lib.manager_packets import (
+    EXPORTS_ROOT,
     AssignmentPreview,
     REQUIRED_PACKET_COPY_EMAILS,
     build_assignment_preview,
