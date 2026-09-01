@@ -75,6 +75,7 @@ class AssignmentPreview:
     excluded_already_sent: int
     skipped_unknown_project: int
     total_candidates: int
+    not_assigned_due_to_limits: int = 0
 
 
 def list_export_batches(exports_root: Path = EXPORTS_ROOT, *, limit: int = 30) -> list[dict[str, Any]]:
@@ -209,6 +210,7 @@ def snake_assign(
     candidates: list[ExportCandidate],
     manager_emails: list[str],
     *,
+    manager_limits: dict[str, int | None] | None = None,
     rng: random.Random | None = None,
 ) -> dict[str, list[ExportCandidate]]:
     if not manager_emails:
@@ -223,13 +225,25 @@ def snake_assign(
         reverse=True,
     )
     packets: dict[str, list[ExportCandidate]] = {email: [] for email in managers}
-    n = len(managers)
-    for i, candidate in enumerate(ranked):
-        round_num = i // n
-        pos = i % n
-        if round_num % 2 == 1:
-            pos = n - 1 - pos
-        packets[managers[pos]].append(candidate)
+    limits = manager_limits or {}
+    slots: list[str] = []
+    slot_counts = {email: 0 for email in managers}
+    round_num = 0
+    while True:
+        round_managers = managers if round_num % 2 == 0 else list(reversed(managers))
+        added = 0
+        for email in round_managers:
+            limit = limits.get(email)
+            if limit is None or limit <= 0 or slot_counts[email] < limit:
+                slots.append(email)
+                slot_counts[email] += 1
+                added += 1
+        if not added:
+            break
+        round_num += 1
+
+    for candidate, email in zip(ranked, slots):
+        packets[email].append(candidate)
     return packets
 
 
@@ -246,6 +260,7 @@ def build_assignment_preview(
 
     excluded = 0
     skipped = 0
+    not_assigned_due_to_limits = 0
     by_project: dict[str, list[ExportCandidate]] = {}
 
     for candidate in candidates:
@@ -265,8 +280,20 @@ def build_assignment_preview(
         market = resolve_market(project_name)
         if market is None:
             continue
+        recipients = list(market.active_managers)
+        manager_emails = [recipient.email for recipient in recipients]
+        manager_limits = {
+            recipient.email: recipient.candidate_limit for recipient in recipients
+        }
         assigned = snake_assign(
-            project_candidates, list(market.manager_emails), rng=rng
+            project_candidates,
+            manager_emails,
+            manager_limits=manager_limits,
+            rng=rng,
+        )
+        not_assigned_due_to_limits += max(
+            0,
+            len(project_candidates) - sum(len(items) for items in assigned.values()),
         )
         for manager_email, assigned_candidates in assigned.items():
             if not assigned_candidates:
@@ -288,6 +315,7 @@ def build_assignment_preview(
         excluded_already_sent=excluded,
         skipped_unknown_project=skipped,
         total_candidates=len(candidates),
+        not_assigned_due_to_limits=not_assigned_due_to_limits,
     )
 
 

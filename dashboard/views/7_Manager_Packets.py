@@ -57,12 +57,38 @@ with st.expander("Configured markets & GMs", expanded=False):
             {
                 "Project": market.project,
                 "Market": market.market,
-                "GMs": ", ".join(market.manager_emails),
-                "Count": len(market.manager_emails),
+                "GMs": ", ".join(
+                    manager.email
+                    + (" (excluded)" if not manager.enabled else "")
+                    + (
+                        f" (max {manager.candidate_limit})"
+                        if manager.candidate_limit
+                        else ""
+                    )
+                    for manager in market.managers
+                ),
+                "Active GMs": len(market.active_managers),
             }
         )
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     st.caption(f"Config: `{DASHBOARD_ROOT / 'config' / 'manager_markets.yaml'}`")
+    st.markdown(
+        """
+To control recipients, edit each manager in `manager_markets.yaml`:
+
+```yaml
+managers:
+  - email: gm@example.com
+    enabled: false        # exclude this GM
+  - email: another@example.com
+    enabled: true
+    candidate_limit: 10  # maximum candidates in this GM's packet
+```
+
+Omit `candidate_limit` (or set it to `null`) for no per-GM cap. The dashboard
+must be refreshed after changing this file.
+"""
+    )
 
 batches = list_export_batches()
 if not batches:
@@ -106,6 +132,11 @@ else:
     m2.metric("Packets", len(preview.packets))
     m3.metric("Already sent (excluded)", preview.excluded_already_sent)
     m4.metric("Other projects skipped", preview.skipped_unknown_project)
+    if preview.not_assigned_due_to_limits:
+        st.warning(
+            f"{preview.not_assigned_due_to_limits} candidate(s) were not assigned "
+            "because active GM limits were reached."
+        )
 
     if not preview.packets:
         st.warning(

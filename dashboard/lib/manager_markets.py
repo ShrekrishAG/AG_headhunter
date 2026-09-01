@@ -14,10 +14,26 @@ CONFIG_PATH = DASHBOARD_ROOT / "config" / "manager_markets.yaml"
 
 
 @dataclass(frozen=True)
+class ManagerRecipient:
+    email: str
+    enabled: bool = True
+    candidate_limit: int | None = None
+
+
+@dataclass(frozen=True)
 class MarketManagers:
     project: str
     market: str
-    manager_emails: tuple[str, ...]
+    managers: tuple[ManagerRecipient, ...]
+
+    @property
+    def manager_emails(self) -> tuple[str, ...]:
+        """Backward-compatible list of enabled manager addresses."""
+        return tuple(manager.email for manager in self.managers if manager.enabled)
+
+    @property
+    def active_managers(self) -> tuple[ManagerRecipient, ...]:
+        return tuple(manager for manager in self.managers if manager.enabled)
 
 
 @lru_cache(maxsize=1)
@@ -26,18 +42,38 @@ def load_market_managers(config_path: Path | None = None) -> list[MarketManagers
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     markets: list[MarketManagers] = []
     for entry in raw.get("markets") or []:
-        emails = []
+        managers: list[ManagerRecipient] = []
         for manager in entry.get("managers") or []:
-            email = str(manager.get("email") or "").strip().lower()
+            if isinstance(manager, str):
+                email = manager.strip().lower()
+                enabled = True
+                candidate_limit = None
+            else:
+                email = str(manager.get("email") or "").strip().lower()
+                enabled = bool(manager.get("enabled", True))
+                raw_limit = manager.get("candidate_limit")
+                try:
+                    candidate_limit = int(raw_limit) if raw_limit is not None else None
+                except (TypeError, ValueError):
+                    candidate_limit = None
+                if candidate_limit is not None and candidate_limit <= 0:
+                    candidate_limit = None
+
             if email and "@" in email and not email.startswith("caine???"):
-                emails.append(email)
-        if not emails:
+                managers.append(
+                    ManagerRecipient(
+                        email=email,
+                        enabled=enabled,
+                        candidate_limit=candidate_limit,
+                    )
+                )
+        if not managers:
             continue
         markets.append(
             MarketManagers(
                 project=str(entry.get("project") or "").strip(),
                 market=str(entry.get("market") or "").strip(),
-                manager_emails=tuple(emails),
+                managers=tuple(managers),
             )
         )
     return markets

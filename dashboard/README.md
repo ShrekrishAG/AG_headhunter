@@ -44,6 +44,26 @@ Mirrors `roles/sales-representative/scorecard.md`:
 - Advance / Hold / Pass vote per interviewer
 - Panel summary when both interviewers have submitted
 
+## Manager packet controls
+
+Manager packet recipients and per-manager candidate caps are configured in
+`config/manager_markets.yaml`:
+
+```yaml
+managers:
+  - email: gm@example.com
+    enabled: false       # exclude this GM from packets
+  - email: another@example.com
+    enabled: true
+    candidate_limit: 10 # maximum candidates assigned to this GM
+```
+
+Omit `candidate_limit` or set it to `null` for no cap. The Manager packets
+page shows excluded GMs and limits in its configuration panel. A preview and
+scheduled send both use these settings. If the active managers' combined
+limits are lower than the available candidates, the remainder is shown as not
+assigned rather than being sent to a GM over their limit.
+
 ## Schema
 
 Migration: `supabase/migrations/20260625120000_initial_accord_headhunter_schema.sql`
