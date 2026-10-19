@@ -6,31 +6,35 @@ markets:
     market: "Wichita, KS"
     managers:
       - email: andreashieb@roofally.com
-        candidate_limit: 10
+        candidate_limit: 15
       - email: joshuahull@roofally.com
-        candidate_limit: 10
+        candidate_limit: 15
 
   - project: "TGC - madison WI"
     market: "Madison, WI"
     managers:
       - email: jacobrhoades@roofally.com
-        candidate_limit: 10
+        candidate_limit: 20
 
   - project: "TGC - Springfield MO"
     market: "Springfield, MO"
     managers:
       - email: juliuswells@roofally.com
-        candidate_limit: 30
+        candidate_limit: 15
 
   - project: "TGC - KC, MO"
     market: "KC MO"
     managers:
       - email: jamespeterson@roofally.com
         candidate_limit: 10
-      - email: cainebirkenholz@roofally.com
-        candidate_limit: 10
       - email: mannysantos@roofally.com
-        candidate_limit: 20
+        candidate_limit: 5
+      - email: matthewstefano@roofally.com
+        candidate_limit: 5
+      - email: markhoggard@roofally.com
+        candidate_limit: 5
+      - email: mikehall@roofally.com
+        candidate_limit: 5
 
   - project: "TGC - St Louis"
     market: "St Louis, MO"
