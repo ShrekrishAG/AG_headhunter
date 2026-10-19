@@ -17,6 +17,7 @@ from lib.auth import require_login  # noqa: E402
 from lib.constants import APP_NAME, FAVICON_PATH, LOGO_PATH  # noqa: E402
 from lib.sidebar import render_sidebar_nav  # noqa: E402
 from lib.job_description_dialog import maybe_show_job_description_dialog  # noqa: E402
+from lib.packet_checklist import public_checklist_token, render_public_checklist  # noqa: E402
 from lib.scheduled_packet_sends import start_scheduled_packet_worker  # noqa: E402
 
 _icon_path = FAVICON_PATH if FAVICON_PATH.exists() else LOGO_PATH
@@ -28,6 +29,11 @@ st.set_page_config(
 )
 
 configure_app_logo()
+
+_checklist_token = public_checklist_token()
+if _checklist_token:
+    render_public_checklist(_checklist_token)
+    st.stop()
 
 if not require_login():
     st.stop()

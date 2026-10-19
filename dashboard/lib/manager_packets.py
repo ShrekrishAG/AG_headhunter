@@ -6,6 +6,7 @@ import csv
 import io
 import random
 import re
+import secrets
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -372,6 +373,7 @@ def _manager_email_body(
     *,
     test_mode: bool = False,
     intended_manager: str | None = None,
+    checklist_url: str | None = None,
 ) -> str:
     names, more = _candidate_lines(packet)
     test_note = ""
@@ -380,11 +382,24 @@ def _manager_email_body(
             f"\n[TEST MODE] Intended GM recipient: {intended_manager or packet.manager_email}\n"
             "This email was redirected for testing. Candidates were NOT marked as sent.\n"
         )
+    if checklist_url:
+        checklist_note = (
+            "Mark each person after you contact them. No password is needed:\n"
+            f"{checklist_url}\n\n"
+        )
+    elif not test_mode:
+        checklist_note = (
+            "A private checklist link is included when this packet is sent, "
+            "so you can mark who you contacted.\n\n"
+        )
+    else:
+        checklist_note = ""
     return (
         f"Hi,\n\n"
         f"{test_note}"
         f"Attached is your candidate packet for {packet.market} "
         f"({packet.project_name}).\n\n"
+        f"{checklist_note}"
         f"Candidates in this packet: {len(packet.candidates)}\n"
         f"Export batch: {packet.export_batch}\n\n"
         f"{names}{more}\n\n"
@@ -480,7 +495,9 @@ def preview_packet_email(
         bcc_emails=bcc_emails,
         subject=_manager_email_subject(packet, test_mode=test_mode),
         body=_manager_email_body(
-            packet, test_mode=test_mode, intended_manager=packet.manager_email
+            packet,
+            test_mode=test_mode,
+            intended_manager=packet.manager_email,
         ),
         test_mode=test_mode,
         attachment_name=f"{packet.packet_id}.zip",
@@ -531,6 +548,7 @@ def send_packet_email(
     zip_bytes: bytes,
     *,
     redirect_to: str | None = None,
+    checklist_url: str | None = None,
 ) -> str:
     if not outbound_sends_enabled():
         raise RuntimeError("Outbound sends are disabled (OUTBOUND_SENDS_ENABLED=false).")
@@ -565,7 +583,10 @@ def send_packet_email(
 
     subject = _manager_email_subject(packet, test_mode=test_mode)
     body = _manager_email_body(
-        packet, test_mode=test_mode, intended_manager=intended
+        packet,
+        test_mode=test_mode,
+        intended_manager=intended,
+        checklist_url=None if test_mode else checklist_url,
     )
     message = Mail(
         from_email=Email(from_email, from_name),
@@ -608,7 +629,13 @@ def send_packet_email(
     return response.headers.get("X-Message-Id", str(response.status_code))
 
 
-def log_packet_send(sb: Client, packet: ManagerPacket, *, message_id: str) -> None:
+def log_packet_send(
+    sb: Client,
+    packet: ManagerPacket,
+    *,
+    message_id: str,
+    checklist_token: str | None = None,
+) -> None:
     if not tracking_available(sb):
         raise RuntimeError(
             "manager_packet_sends table missing — apply migration "
@@ -631,6 +658,7 @@ def log_packet_send(sb: Client, packet: ManagerPacket, *, message_id: str) -> No
                 "packet_id": packet.packet_id,
                 "sendgrid_message_id": message_id,
                 "sent_at": now,
+                "checklist_token": checklist_token,
             }
         )
     if rows:
@@ -649,18 +677,34 @@ def send_all_packets(
     redirect_to: send every packet to this address (test mode).
     record_sends: when False, skip never-send-twice logging (use for tests).
     """
+    from lib.packet_checklist import checklist_page_url, require_checklist_storage
+
     successes: list[str] = []
     errors: list[str] = []
+    if record_sends and not redirect_to:
+        require_checklist_storage(sb)
     for packet in packets:
         if not packet.candidates:
             continue
         try:
+            checklist_token = (
+                secrets.token_urlsafe(24) if record_sends and not redirect_to else None
+            )
+            checklist_url = checklist_page_url(checklist_token) if checklist_token else None
             zip_bytes = build_packet_zip(packet)
             message_id = send_packet_email(
-                packet, zip_bytes, redirect_to=redirect_to
+                packet,
+                zip_bytes,
+                redirect_to=redirect_to,
+                checklist_url=checklist_url,
             )
             if record_sends:
-                log_packet_send(sb, packet, message_id=message_id)
+                log_packet_send(
+                    sb,
+                    packet,
+                    message_id=message_id,
+                    checklist_token=checklist_token,
+                )
             dest = redirect_to or packet.manager_email
             label = (
                 f"{dest} (intended {packet.manager_email}) · {packet.market} · "

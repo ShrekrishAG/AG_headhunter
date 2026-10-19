@@ -15,6 +15,11 @@ from lib.manager_markets import (
     market_active_recipients,
     market_recipients,
 )
+from lib.packet_checklist import (
+    ChecklistStorageError,
+    checklist_storage_ready,
+    load_batch_contact_progress,
+)
 from lib.manager_packets import (
     EXPORTS_ROOT,
     AssignmentPreview,
@@ -113,6 +118,29 @@ selected_batch = st.selectbox(
     format_func=lambda key: batch_labels.get(key, key),
 )
 export_dir = Path(next(b["path"] for b in batches if b["batch"] == selected_batch))
+
+st.subheader("GM contact progress")
+st.caption(
+    "What each GM has marked on their checklist after the packet email. "
+    "This is separate from the pipeline Contacted count."
+)
+try:
+    contact_progress = load_batch_contact_progress(sb, selected_batch)
+except ChecklistStorageError as exc:
+    contact_progress = None
+    st.warning(str(exc))
+else:
+    if not contact_progress:
+        st.caption("No packets from this batch have been emailed yet.")
+    else:
+        st.dataframe(
+            pd.DataFrame(contact_progress),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Checklist": st.column_config.LinkColumn("Checklist"),
+            },
+        )
 
 col_preview, col_status = st.columns([1, 1])
 with col_preview:
@@ -259,7 +287,13 @@ else:
             key=f"manager_packet_email_body_{preview.export_batch}_{chosen_label}",
         )
 
-        ready = outbound_sends_enabled() and sendgrid_configured() and tracking_available(sb)
+        checklist_ready = checklist_storage_ready(sb)
+        ready = (
+            outbound_sends_enabled()
+            and sendgrid_configured()
+            and tracking_available(sb)
+            and (checklist_ready or test_mode)
+        )
         test_ready = outbound_sends_enabled() and sendgrid_configured()
         if not outbound_sends_enabled():
             st.warning("Outbound sends are OFF (`OUTBOUND_SENDS_ENABLED=false`).")
@@ -267,6 +301,11 @@ else:
             st.warning("Configure SendGrid before sending.")
         elif not tracking_available(sb):
             st.warning("Apply the manager packet send-log migration before real sends.")
+        elif not test_mode and not checklist_ready:
+            st.warning(
+                "Apply `supabase/migrations/20261013120000_manager_packet_checklist.sql` "
+                "before live sends. That adds the GM checklist link."
+            )
 
         live_blocked = (not test_mode) and (
             bool(recipient_check["missing_from_config"])
@@ -444,6 +483,7 @@ else:
                 "Manager": row.get("manager_email") or "—",
                 "Batch": row.get("export_batch") or "—",
                 "Email": row.get("candidate_email") or "—",
+                "GM contacted": "Yes" if row.get("gm_contacted_at") else "—",
             }
             for row in history
         ]
