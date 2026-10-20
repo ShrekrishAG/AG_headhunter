@@ -89,6 +89,7 @@ def render_sidebar_nav(
     pipeline_page,
     r1_page,
     import_prospects_page=None,
+    gm_contacted_page=None,
 ) -> None:
     _inject_sidebar_layout_css()
     init_role_selection()
@@ -99,6 +100,8 @@ def render_sidebar_nav(
     st.page_link(pipeline_page, label="Pipeline", use_container_width=True)
     st.page_link(dashboard_page, label="Dashboard", use_container_width=True)
     st.page_link(manager_packets_page, label="Manager packets", use_container_width=True)
+    if gm_contacted_page is not None:
+        st.page_link(gm_contacted_page, label="GM contacted", use_container_width=True)
     if import_prospects_page is not None:
         st.page_link(
             import_prospects_page, label="Import prospects", use_container_width=True

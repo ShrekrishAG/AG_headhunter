@@ -72,6 +72,11 @@ manager_packets_page = st.Page(
     title="Manager packets",
     url_path="manager-packets",
 )
+gm_contacted_page = st.Page(
+    f"{VIEWS}/9_GM_Contacted.py",
+    title="GM contacted",
+    url_path="gm-contacted",
+)
 import_prospects_page = st.Page(
     f"{VIEWS}/8_Import_Prospects.py",
     title="Import prospects",
@@ -97,6 +102,7 @@ legacy_pages = [
     st.Page(f"{VIEWS}/5_Communications_Setup.py", title="Communications", url_path="5_Communications_Setup"),
     st.Page(f"{VIEWS}/6_Outreach_Log.py", title="Outreach log", url_path="6_Outreach_Log"),
     st.Page(f"{VIEWS}/7_Manager_Packets.py", title="Manager packets", url_path="7_Manager_Packets"),
+    st.Page(f"{VIEWS}/9_GM_Contacted.py", title="GM contacted", url_path="9_GM_Contacted"),
     st.Page(f"{VIEWS}/2_Pipeline_Report.py", title="Pipeline", url_path="2_Pipeline_Report"),
     st.Page(f"{VIEWS}/3_Job_Description.py", title="Job Description", url_path="3_Job_Description"),
     st.Page(f"{VIEWS}/1_R1_Scoring.py", title="R1 Scoring", url_path="1_R1_Scoring"),
@@ -108,6 +114,7 @@ pg = st.navigation(
             pipeline_page,
             dashboard_page,
             manager_packets_page,
+            gm_contacted_page,
             import_prospects_page,
             process_page,
             job_description_page,
@@ -126,6 +133,7 @@ with st.sidebar:
         communications_page=communications_page,
         outreach_log_page=outreach_log_page,
         manager_packets_page=manager_packets_page,
+        gm_contacted_page=gm_contacted_page,
         import_prospects_page=import_prospects_page,
         pipeline_page=pipeline_page,
         r1_page=r1_page,

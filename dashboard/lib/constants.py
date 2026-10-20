@@ -47,6 +47,7 @@ PAGE_PATHS = {
     "R1 Scoring": "r1-scoring",
     "Outreach log": "outreach-log",
     "Manager packets": "manager-packets",
+    "GM contacted": "gm-contacted",
 }
 
 

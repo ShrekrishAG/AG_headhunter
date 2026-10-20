@@ -218,7 +218,11 @@ def _apply_remember_cookie_action(cm: stx.CookieManager) -> None:
             same_site="lax",
         )
     else:
-        cm.delete(REMEMBER_COOKIE, key=f"hh_remember_del_{stamp}")
+        try:
+            cm.delete(REMEMBER_COOKIE, key=f"hh_remember_del_{stamp}")
+        except KeyError:
+            # Cookie already absent — ignore so login page still loads.
+            pass
 
 
 def _restore_from_remember_cookie(cm: stx.CookieManager) -> bool:

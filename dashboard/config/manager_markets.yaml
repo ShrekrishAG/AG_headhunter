@@ -29,8 +29,6 @@ markets:
         candidate_limit: 10
       - email: mannysantos@roofally.com
         candidate_limit: 5
-      - email: matthewstefano@roofally.com
-        candidate_limit: 5
       - email: markhoggard@roofally.com
         candidate_limit: 5
       - email: mikehall@roofally.com

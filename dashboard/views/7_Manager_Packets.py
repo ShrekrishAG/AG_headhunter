@@ -122,7 +122,8 @@ export_dir = Path(next(b["path"] for b in batches if b["batch"] == selected_batc
 st.subheader("GM contact progress")
 st.caption(
     "What each GM has marked on their checklist after the packet email. "
-    "This is separate from the pipeline Contacted count."
+    "This is separate from the pipeline Contacted count. "
+    "Open **GM contacted** in the sidebar for the full list."
 )
 try:
     contact_progress = load_batch_contact_progress(sb, selected_batch)
@@ -483,7 +484,13 @@ else:
                 "Manager": row.get("manager_email") or "—",
                 "Batch": row.get("export_batch") or "—",
                 "Email": row.get("candidate_email") or "—",
-                "GM contacted": "Yes" if row.get("gm_contacted_at") else "—",
+                "GM status": (
+                    "Contacted"
+                    if row.get("gm_contacted_at")
+                    else "Not interested"
+                    if row.get("gm_not_interested_at")
+                    else "—"
+                ),
             }
             for row in history
         ]
