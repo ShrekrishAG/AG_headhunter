@@ -17,6 +17,9 @@ CHECKLIST_MIGRATION = (
 NOT_INTERESTED_MIGRATION = (
     "supabase/migrations/20261020120000_manager_packet_not_interested.sql"
 )
+INTERESTED_MIGRATION = (
+    "supabase/migrations/20261112120000_manager_packet_interested.sql"
+)
 
 
 class ChecklistStorageError(RuntimeError):
@@ -41,11 +44,16 @@ def checklist_storage_problem(sb: Client) -> str | None:
     """None when the checklist columns are ready. Otherwise a short reason."""
     try:
         sb.table("manager_packet_sends").select(
-            "checklist_token,gm_contacted_at,gm_not_interested_at"
+            "checklist_token,gm_contacted_at,gm_not_interested_at,gm_interested_at"
         ).limit(1).execute()
         return None
     except Exception as exc:
         text = str(exc).lower()
+        if "gm_interested_at" in text:
+            return (
+                "GM checklist Interested column is missing. Run "
+                f"`{INTERESTED_MIGRATION}` in the Supabase SQL editor."
+            )
         if "gm_not_interested_at" in text:
             return (
                 "GM checklist Not interested column is missing. Run "
@@ -59,8 +67,8 @@ def checklist_storage_problem(sb: Client) -> str | None:
         ):
             return (
                 "GM checklist storage is not ready. Run "
-                f"`{CHECKLIST_MIGRATION}` then `{NOT_INTERESTED_MIGRATION}` "
-                "in the Supabase SQL editor."
+                f"`{CHECKLIST_MIGRATION}`, `{NOT_INTERESTED_MIGRATION}`, then "
+                f"`{INTERESTED_MIGRATION}` in the Supabase SQL editor."
             )
         return "Could not reach Supabase to load the checklist. Try again in a moment."
 
@@ -95,12 +103,17 @@ def _format_not_interested_at(value: str | None) -> str:
     return _format_marked_at(value, label="Marked not interested")
 
 
+def _format_interested_at(value: str | None) -> str:
+    return _format_marked_at(value, label="Marked interested")
+
+
 def load_checklist_rows(sb: Client, token: str) -> list[dict]:
     rows = (
         sb.table("manager_packet_sends")
         .select(
             "id,candidate_name,candidate_email,candidate_phone,market,"
-            "manager_email,gm_contacted_at,gm_not_interested_at,checklist_token"
+            "manager_email,gm_contacted_at,gm_not_interested_at,gm_interested_at,"
+            "checklist_token"
         )
         .eq("checklist_token", token)
         .execute()
@@ -116,6 +129,7 @@ def set_gm_contacted(sb: Client, *, token: str, row_id: str, contacted: bool) ->
     }
     if contacted:
         payload["gm_not_interested_at"] = None
+        payload["gm_interested_at"] = None
     sb.table("manager_packet_sends").update(payload).eq("id", row_id).eq(
         "checklist_token", token
     ).execute()
@@ -129,6 +143,21 @@ def set_gm_not_interested(
     }
     if not_interested:
         payload["gm_contacted_at"] = None
+        payload["gm_interested_at"] = None
+    sb.table("manager_packet_sends").update(payload).eq("id", row_id).eq(
+        "checklist_token", token
+    ).execute()
+
+
+def set_gm_interested(
+    sb: Client, *, token: str, row_id: str, interested: bool
+) -> None:
+    payload: dict[str, str | None] = {
+        "gm_interested_at": datetime.now(CT).isoformat() if interested else None,
+    }
+    if interested:
+        payload["gm_contacted_at"] = None
+        payload["gm_not_interested_at"] = None
     sb.table("manager_packet_sends").update(payload).eq("id", row_id).eq(
         "checklist_token", token
     ).execute()
@@ -144,7 +173,7 @@ def load_gm_contact_rows(sb: Client, *, limit: int = 2000) -> list[dict]:
         .select(
             "candidate_name,candidate_email,candidate_phone,market,manager_email,"
             "export_batch,packet_id,checklist_token,gm_contacted_at,"
-            "gm_not_interested_at,sent_at"
+            "gm_not_interested_at,gm_interested_at,sent_at"
         )
         .order("sent_at", desc=True)
         .limit(limit)
@@ -166,6 +195,10 @@ def format_gm_not_interested_display(value: str | None) -> str:
     )
 
 
+def format_gm_interested_display(value: str | None) -> str:
+    return _format_interested_at(value).removeprefix("Marked interested ").strip() or "—"
+
+
 def load_batch_contact_progress(sb: Client, export_batch: str) -> list[dict]:
     problem = checklist_storage_problem(sb)
     if problem:
@@ -174,7 +207,7 @@ def load_batch_contact_progress(sb: Client, export_batch: str) -> list[dict]:
         sb.table("manager_packet_sends")
         .select(
             "manager_email,market,packet_id,checklist_token,"
-            "gm_contacted_at,gm_not_interested_at"
+            "gm_contacted_at,gm_not_interested_at,gm_interested_at"
         )
         .eq("export_batch", export_batch)
         .execute()
@@ -191,6 +224,7 @@ def load_batch_contact_progress(sb: Client, export_batch: str) -> list[dict]:
                 "Manager": key[0] or "—",
                 "Market": row.get("market") or "—",
                 "Contacted": 0,
+                "Interested": 0,
                 "Not interested": 0,
                 "Candidates": 0,
                 "Checklist": checklist_page_url(token) if token else "",
@@ -199,6 +233,8 @@ def load_batch_contact_progress(sb: Client, export_batch: str) -> list[dict]:
         bucket["Candidates"] += 1
         if row.get("gm_contacted_at"):
             bucket["Contacted"] += 1
+        if row.get("gm_interested_at"):
+            bucket["Interested"] += 1
         if row.get("gm_not_interested_at"):
             bucket["Not interested"] += 1
     return sorted(grouped.values(), key=lambda item: (item["Market"], item["Manager"]))
@@ -236,11 +272,12 @@ def render_public_checklist(token: str) -> None:
 
     market = rows[0].get("market") or "your market"
     contacted = sum(1 for row in rows if row.get("gm_contacted_at"))
+    interested = sum(1 for row in rows if row.get("gm_interested_at"))
     not_interested = sum(1 for row in rows if row.get("gm_not_interested_at"))
     st.caption(
-        f"{market} · {contacted} contacted · {not_interested} not interested · "
-        f"{len(rows)} total. Mark each person after you talk to them. "
-        "Accord can see what you mark."
+        f"{market} · {contacted} contacted · {interested} interested · "
+        f"{not_interested} not interested · {len(rows)} total. "
+        "Mark each person after you talk to them. Accord can see what you mark."
     )
 
     for row in rows:
@@ -255,17 +292,21 @@ def render_public_checklist(token: str) -> None:
         if email:
             bits.append(f"[{email}](mailto:{email})")
         when_contacted = _format_contacted_at(row.get("gm_contacted_at"))
+        when_interested = _format_interested_at(row.get("gm_interested_at"))
         when_ni = _format_not_interested_at(row.get("gm_not_interested_at"))
         if when_contacted:
             bits.append(when_contacted)
+        if when_interested:
+            bits.append(when_interested)
         if when_ni:
             bits.append(when_ni)
         if bits:
             st.caption(" · ".join(bits))
 
         already_contacted = bool(row.get("gm_contacted_at"))
+        already_interested = bool(row.get("gm_interested_at"))
         already_ni = bool(row.get("gm_not_interested_at"))
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         with c1:
             checked_contacted = st.checkbox(
                 "Contacted",
@@ -273,6 +314,12 @@ def render_public_checklist(token: str) -> None:
                 key=f"gm_contact_{row_id}",
             )
         with c2:
+            checked_interested = st.checkbox(
+                "Interested",
+                value=already_interested,
+                key=f"gm_int_{row_id}",
+            )
+        with c3:
             checked_ni = st.checkbox(
                 "Not interested",
                 value=already_ni,
@@ -282,6 +329,11 @@ def render_public_checklist(token: str) -> None:
         if checked_contacted != already_contacted:
             set_gm_contacted(
                 sb, token=token, row_id=row_id, contacted=checked_contacted
+            )
+            st.rerun()
+        if checked_interested != already_interested:
+            set_gm_interested(
+                sb, token=token, row_id=row_id, interested=checked_interested
             )
             st.rerun()
         if checked_ni != already_ni:

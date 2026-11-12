@@ -485,7 +485,9 @@ else:
                 "Batch": row.get("export_batch") or "—",
                 "Email": row.get("candidate_email") or "—",
                 "GM status": (
-                    "Contacted"
+                    "Interested"
+                    if row.get("gm_interested_at")
+                    else "Contacted"
                     if row.get("gm_contacted_at")
                     else "Not interested"
                     if row.get("gm_not_interested_at")
